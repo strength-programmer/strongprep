@@ -54,7 +54,7 @@ Provide the following example variables with placeholders, not working secrets. 
 | Backend, live AI | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `AI_PROVIDER=claude` | Configured model integration; demo uses `AI_PROVIDER=mock` |
 | Backend, later search | `TAVILY_API_KEY`, `FIRECRAWL_API_KEY` | Optional live discovery/extraction; absent keys must not break manual entry |
 | Backend, live database/auth | `DATABASE_URL`, `SUPABASE_URL` | Target PostgreSQL connection and trusted auth project; document verification configuration |
-| Frontend | `NEXT_PUBLIC_API_BASE_URL` | Backend URL; local default `http://localhost:8000` |
+| Frontend | `NEXT_PUBLIC_API_BASE_URL` | Backend URL; local default `http://127.0.0.1:8000` |
 | Frontend, live auth | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe project connection for login |
 | Backend | `CORS_ALLOWED_ORIGINS` | Explicit permitted frontend origins; local default `http://localhost:3000` |
 

@@ -38,7 +38,7 @@ copy .env.example .env.local
 npm run dev
 ```
 
-Open <http://localhost:3000>. API docs are at <http://127.0.0.1:8000/docs>.
+Open <http://127.0.0.1:3000> (both servers listen on this machine only). API docs are at <http://127.0.0.1:8000/docs>.
 
 Restarting: re-run only the last command in each terminal (activate the venv first). Data lives in `backend\strongprep-demo.db` and survives restarts.
 
@@ -72,7 +72,7 @@ Backend `.env` (see `backend/.env.example`):
 | `SUPABASE_URL`, `SUPABASE_JWT_SECRET` | live mode. With no secret, tokens are verified against the project's JWKS endpoint |
 | `CORS_ALLOWED_ORIGINS` | defaults to `http://localhost:3000,http://127.0.0.1:3000` |
 
-Frontend `.env.local`: `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000`), and for live mode `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+Frontend `.env.local`: `NEXT_PUBLIC_API_BASE_URL` (default `http://127.0.0.1:8000`), and for live mode `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 
 **Demo mode** uses one fixed identity, accepts loopback clients only (non-local requests get 403), and refuses to start against a non-SQLite database. **Live mode** requires a valid Supabase-issued bearer token on every private route; there is no fallback to the demo identity. The owner always comes from the verified token `sub`, never from the request body, and every private query filters by it.
 
