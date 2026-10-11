@@ -109,5 +109,5 @@ frontend/app (routes)  components/  lib/
 - The Claude adapter is tested only against a fake client; it has not been run against the live API. Tavily/Firecrawl are interfaces plus mocks only; competition input is manual.
 - Live Supabase auth/Postgres was **not** tested against a real project (only mocked tokens on SQLite). Migrations were generated against SQLite.
 - Exercise templates are unreviewed demo content; the gap-label rules and the 20-athlete threshold await coach review.
-- Equipment `max load` is compared to event loads directly (no per-hand/total conversion). Competition search is text-based; no distance or driving time.
+- Equipment `max load` is compared to event loads directly (no per-hand/total conversion). Distances are straight-line estimates from an approximate (about 1 km rounded) location, never driving time; competitions without coordinates are hidden by the radius filter and counted.
 - Plans are synchronous (no job queue), one plan per click; no LangGraph.

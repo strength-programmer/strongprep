@@ -1,16 +1,33 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
-import { api, ApiError, useApi } from "@/lib/api";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, apiFull, ApiError, useApi } from "@/lib/api";
 import { fmtDate, fmtVenueTime, numOrNull } from "@/lib/format";
 import { Card, CompStatusBadge, DemoBadge, Badge, Empty, ErrorBox, Field, Loading } from "@/components/ui";
 
 export default function Competitions() {
-  const [filters, setFilters] = useState({ q: "", city: "", date_from: "", date_to: "", status: "" });
+  const [filters, setFilters] = useState({ q: "", city: "", date_from: "", date_to: "", status: "", nearby: "" });
   const [applied, setApplied] = useState(filters);
-  const qs = new URLSearchParams(Object.entries(applied).filter(([, v]) => v)).toString();
-  const { data, error, loading, reload } = useApi<any[]>(`/competitions${qs ? `?${qs}` : ""}`);
+  const me = useApi<any>("/athlete-profile");
+  const radius: number | null = me.data?.profile?.travel_radius_km ?? null;
+  const hasLocation = me.data?.profile?.approx_lat != null;
+  const { nearby, ...plain } = applied;
+  const qs = new URLSearchParams({ ...Object.fromEntries(Object.entries(plain).filter(([, v]) => v)), ...(nearby && radius ? { within_km: String(radius) } : {}) }).toString();
+  const [data, setData] = useState<any[] | null>(null);
+  const [hidden, setHidden] = useState<number | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [loading, setLoading] = useState(true);
+  const reload = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const r = await apiFull<any[]>(`/competitions${qs ? `?${qs}` : ""}`);
+      setData(r.data);
+      const h = r.headers.get("X-Unknown-Distance-Count");
+      setHidden(h == null ? null : Number(h));
+    } catch (e) { setError(e as ApiError); } finally { setLoading(false); }
+  }, [qs]);
+  useEffect(() => { reload(); }, [reload]);
   const set = (k: string, v: string) => setFilters((f) => ({ ...f, [k]: v }));
 
   return (
@@ -31,13 +48,22 @@ export default function Competitions() {
               <option value="">Any</option><option value="upcoming">Upcoming</option><option value="canceled">Canceled</option><option value="completed">Completed</option>
             </select>
           </Field>
+          <label className="check" style={{ flexBasis: "100%" }}>
+            <input type="checkbox" checked={Boolean(filters.nearby)} disabled={!radius} onChange={(e) => set("nearby", e.target.checked ? "1" : "")} />
+            Only within my travel radius{radius ? ` (${radius} km, straight-line)` : " (set a travel radius in your profile first)"}
+          </label>
           <button className="btn btn-primary">Apply</button>
-          <button type="button" className="btn" onClick={() => { const empty = { q: "", city: "", date_from: "", date_to: "", status: "" }; setFilters(empty); setApplied(empty); }}>Clear</button>
+          <button type="button" className="btn" onClick={() => { const empty = { q: "", city: "", date_from: "", date_to: "", status: "", nearby: "" }; setFilters(empty); setApplied(empty); }}>Clear</button>
         </form>
-        <p className="small muted">Distance is not calculated: location filtering is by city text only, and travel time is not estimated.</p>
+        <p className="small muted">Distances are straight-line estimates from your approximate location, not driving or travel time. {hasLocation ? "" : <>Add an approximate location in <Link href="/profile">your profile</Link> to see them.</>}</p>
       </details>
 
-      {loading ? <Loading what="Loading competitions" /> : error ? <ErrorBox error={error} onRetry={reload} /> : !data || data.length === 0 ? (
+      {hidden != null && hidden > 0 && (
+        <div className="alert alert-info" role="status">
+          {hidden} competition{hidden === 1 ? " has" : "s have"} no recorded location, so the distance filter cannot judge {hidden === 1 ? "it" : "them"} and {hidden === 1 ? "it is" : "they are"} hidden. Clear the filter to see {hidden === 1 ? "it" : "them"}.
+        </div>
+      )}
+      {loading && !data ? <Loading what="Loading competitions" /> : error ? <ErrorBox error={error} onRetry={reload} /> : !data || data.length === 0 ? (
         <Empty title="No competitions match these filters">Clear the filters or add one manually below.</Empty>
       ) : (
         <div className="list" style={{ marginTop: "1rem" }}>
@@ -57,6 +83,7 @@ export default function Competitions() {
                   <div>
                     <CompStatusBadge status={c.status} />
                     {c.status === "upcoming" && days >= 0 && <Badge tone="info">{days} days away</Badge>}
+                    {c.approx_distance_km != null && <Badge tone="neutral">~{c.approx_distance_km} km straight-line, not driving time</Badge>}
                     {c.is_demo && <DemoBadge label={c.demo_label} />}
                     {!c.is_shared_catalog && <Badge tone="info">Your entry</Badge>}
                     {c.verification_status !== "verified" && <Badge tone="warn">{c.verification_status === "fixture" ? "Fixture data" : "Unverified"}</Badge>}
@@ -79,7 +106,7 @@ const SCORING = ["max_load", "reps", "time", "distance", "custom"];
 function ManualEntry({ onCreated }: { onCreated: () => void }) {
   const ref = useApi<any>("/reference");
   const router = useRouter();
-  const [f, setF] = useState({ title: "", organizer: "", city: "", start_date: "", start_time: "", timezone: "", source_url: "", div_name: "Open", category: "open", wmin: "", wmax: "", amin: "", amax: "", notes: "" });
+  const [f, setF] = useState({ title: "", organizer: "", city: "", start_date: "", start_time: "", timezone: "", latitude: "", longitude: "", source_url: "", div_name: "Open", category: "open", wmin: "", wmax: "", amin: "", amax: "", notes: "" });
   const [events, setEvents] = useState([{ name: "", task_key: "deadlift_barbell", scoring_type: "max_load", load: "", per_hand: false, unit: "kg", time: "", dist: "", rules: "" }]);
   const [err, setErr] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -96,7 +123,7 @@ function ManualEntry({ onCreated }: { onCreated: () => void }) {
     e.preventDefault(); setBusy(true); setErr(null);
     try {
       const c = await api("/competitions", { method: "POST", body: {
-        title: f.title, organizer: f.organizer || null, city: f.city || null, start_date: f.start_date, start_time: f.start_time || null, timezone: f.timezone || null, source_url: f.source_url || null,
+        title: f.title, organizer: f.organizer || null, city: f.city || null, start_date: f.start_date, start_time: f.start_time || null, timezone: f.timezone || null, latitude: numOrNull(f.latitude), longitude: numOrNull(f.longitude), source_url: f.source_url || null,
         divisions: [{
           name: f.div_name, category: f.category, weight_min_kg: numOrNull(f.wmin), weight_max_kg: numOrNull(f.wmax), age_min: numOrNull(f.amin), age_max: numOrNull(f.amax),
           eligibility_notes: f.notes || null, needs_manual_confirmation: Boolean(f.notes),
@@ -129,6 +156,10 @@ function ManualEntry({ onCreated }: { onCreated: () => void }) {
             </Field>
             <Field label="City"><input value={f.city} onChange={(e) => set("city", e.target.value)} /></Field>
             <Field label="Organizer"><input value={f.organizer} onChange={(e) => set("organizer", e.target.value)} /></Field>
+          </div>
+          <div className="row">
+            <Field label="Venue latitude (optional)" hint="Approximate is fine. Enter both or neither."><input type="number" step="0.01" min="-90" max="90" value={f.latitude} onChange={(e) => set("latitude", e.target.value)} /></Field>
+            <Field label="Venue longitude (optional)"><input type="number" step="0.01" min="-180" max="180" value={f.longitude} onChange={(e) => set("longitude", e.target.value)} /></Field>
           </div>
           <Field label="Source URL (where you found these rules)"><input value={f.source_url} onChange={(e) => set("source_url", e.target.value)} /></Field>
           <h3>Division</h3>

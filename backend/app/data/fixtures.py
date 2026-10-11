@@ -32,7 +32,7 @@ TEMPLATES = [
 
 # name, status, day offset, city, divisions
 COMPETITIONS = [
-    {"title": "Harbor Strongman Open", "organizer": "Harborview Strength Club (fictional)", "city": "Harborview", "country": "Nowhere", "days": 56, "time": time(9, 0), "tz": "Asia/Manila", "status": "upcoming", "fee": 40.0,
+    {"title": "Harbor Strongman Open", "lat": 14.6, "lon": 120.98, "organizer": "Harborview Strength Club (fictional)", "city": "Harborview", "country": "Nowhere", "days": 56, "time": time(9, 0), "tz": "Asia/Manila", "status": "upcoming", "fee": 40.0,
      "divisions": [
          {"name": "Novice Men -105 kg", "category": "men", "wmax": 105.0, "events": [
              ("Deadlift for reps (60 s)", "deadlift_barbell", "reps", 160, False, 60, None, "160 kg", "kg", "Max reps in 60 seconds, standard barbell, touch-and-go permitted."),
@@ -45,7 +45,7 @@ COMPETITIONS = [
              ("Log clean and press", "log_clean_press", "reps", 40, False, 75, None, "40 kg", "kg", "Max reps in 75 seconds."),
          ]},
      ]},
-    {"title": "Ridge Iron Games", "organizer": "Ridge Iron Collective (fictional)", "city": "Ridgeton", "country": "Nowhere", "days": 120, "time": time(8, 30), "tz": "Asia/Manila", "status": "upcoming", "fee": 55.0,
+    {"title": "Ridge Iron Games", "lat": 16.41, "lon": 120.59, "organizer": "Ridge Iron Collective (fictional)", "city": "Ridgeton", "country": "Nowhere", "days": 120, "time": time(8, 30), "tz": "Asia/Manila", "status": "upcoming", "fee": 55.0,
      "divisions": [
          {"name": "Open Novice", "category": "open", "events": [
              ("Max deadlift", "deadlift_barbell", "max_load", None, False, None, None, None, "unknown", "Heaviest successful single, standard barbell. Weight ladder not yet published."),
@@ -57,16 +57,16 @@ COMPETITIONS = [
              ("Max deadlift", "deadlift_barbell", "max_load", 200, False, None, None, "200 kg", "kg", "Heaviest successful single."),
          ]},
      ]},
-    {"title": "Quarry Challenge", "organizer": "Quarry Lifters (fictional)", "city": "Quarryfield", "country": "Nowhere", "days": 21, "time": time(10, 0), "tz": "Asia/Manila", "status": "upcoming", "fee": 25.0,
+    {"title": "Quarry Challenge", "lat": 14.2, "lon": 121.15, "organizer": "Quarry Lifters (fictional)", "city": "Quarryfield", "country": "Nowhere", "days": 21, "time": time(10, 0), "tz": "Asia/Manila", "status": "upcoming", "fee": 25.0,
      "divisions": [
          {"name": "Novice Men -105 kg", "category": "men", "wmax": 105.0, "events": [
              ("Max deadlift", "deadlift_barbell", "max_load", 150, False, None, None, "150 kg", "kg", "Bar loaded to 150 kg; successful single scores."),
              ("Strict barbell press", "press_barbell_strict", "max_load", 70, False, None, None, "70 kg", "kg", "Strict press, no leg drive."),
          ]},
      ]},
-    {"title": "Lakeside Open", "organizer": "Lakeside Gym (fictional)", "city": "Lakeside", "country": "Nowhere", "days": 30, "status": "canceled", "fee": None,
+    {"title": "Lakeside Open", "lat": 14.17, "lon": 121.33, "organizer": "Lakeside Gym (fictional)", "city": "Lakeside", "country": "Nowhere", "days": 30, "status": "canceled", "fee": None,
      "divisions": [{"name": "Open", "category": "open", "events": [("Max deadlift", "deadlift_barbell", "max_load", 160, False, None, None, "160 kg", "kg", "Cancelled by organizer.")]}]},
-    {"title": "Old Quarter Throwdown", "organizer": "Old Quarter Strongman (fictional)", "city": "Old Quarter", "country": "Nowhere", "days": -40, "status": "completed", "fee": 30.0,
+    {"title": "Old Quarter Throwdown", "lat": 14.58, "lon": 121.0, "organizer": "Old Quarter Strongman (fictional)", "city": "Old Quarter", "country": "Nowhere", "days": -40, "status": "completed", "fee": 30.0,
      "divisions": [{"name": "Novice Men", "category": "men", "events": [("Max deadlift", "deadlift_barbell", "max_load", 140, False, None, None, "140 kg", "kg", "Completed event.")]}]},
 ]
 
@@ -99,11 +99,13 @@ def _backfill_times(db):
     """Fixtures seeded before venue times existed: fill start_time/timezone where still unset (never overwrites)."""
     from app.models import Competition
     for c in COMPETITIONS:
-        if not c.get("time"):
-            continue
         row = db.query(Competition).filter(Competition.owner_id.is_(None), Competition.title == f"{c['title']} (fictional)").first()
-        if row and row.start_time is None and row.timezone is None:
+        if row is None:
+            continue
+        if c.get("time") and row.start_time is None and row.timezone is None:
             row.start_time, row.timezone = c["time"], c["tz"]
+        if c.get("lat") is not None and row.latitude is None and row.longitude is None:
+            row.latitude, row.longitude = c["lat"], c["lon"]
     db.commit()
 
 
@@ -118,6 +120,7 @@ def seed_competitions(db, today: date | None = None):
         comp = Competition(
             owner_id=None, title=f"{c['title']} (fictional)", organizer=c["organizer"], venue="Fictional Arena", city=c["city"],
             country=c["country"], start_date=today + timedelta(days=c["days"]), start_time=c.get("time"), timezone=c.get("tz"),
+            latitude=c.get("lat"), longitude=c.get("lon"),
             registration_deadline=today + timedelta(days=c["days"] - 14) if c["status"] == "upcoming" else None,
             source_url="fixture://" + c["title"].lower().replace(" ", "-"), registration_url=None,
             entry_fee=c["fee"], fee_currency="USD" if c["fee"] else None, last_checked_at=now, last_confirmed_at=None,
@@ -169,7 +172,7 @@ def seed_demo_athlete(db, owner_id: str, today: date | None = None):
         return False
     db.add(AthleteProfile(owner_id=owner_id, display_name="Demo Athlete (fictional)", body_weight_kg=98.0, age=29,
                           division_category="men", experience_level="novice", competitions_entered=1, city="Harborview",
-                          travel_radius_km=60, days_per_week=4, session_minutes=75, goal="participate",
+                          travel_radius_km=60, approx_lat=14.60, approx_lon=121.00, days_per_week=4, session_minutes=75, goal="participate",
                           avoid_exercises=[], pain_flags=[]))
     for impl, acc, mx, note in [("barbell", "regular", 220, "Commercial gym"), ("dumbbell", "regular", 50, "Up to 50 kg each"),
                                 ("rack_bench", "regular", None, None), ("kettlebell", "regular", 32, None),

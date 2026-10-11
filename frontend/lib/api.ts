@@ -17,6 +17,10 @@ export class ApiError extends Error {
 }
 
 export async function api<T = any>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  return (await apiFull<T>(path, init)).data;
+}
+
+export async function apiFull<T = any>(path: string, init: { method?: string; body?: unknown } = {}): Promise<{ data: T; headers: Headers }> {
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   // Live mode only: attach the Supabase session token. Demo mode sends nothing and the backend uses its fixed identity.
@@ -32,7 +36,7 @@ export async function api<T = any>(path: string, init: { method?: string; body?:
   } catch {
     throw new ApiError(0, `Cannot reach the StrongPrep backend at ${API_BASE}. Is it running?`);
   }
-  if (res.status === 204) return undefined as T;
+  if (res.status === 204) return { data: undefined as T, headers: res.headers };
   const text = await res.text();
   let data: any = null;
   try {
@@ -41,7 +45,7 @@ export async function api<T = any>(path: string, init: { method?: string; body?:
     data = text;
   }
   if (!res.ok) throw new ApiError(res.status, data?.detail ?? data);
-  return data as T;
+  return { data: data as T, headers: res.headers };
 }
 
 export function useApi<T = any>(path: string | null) {

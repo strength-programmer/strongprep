@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.data.reference import BODY_AREAS, TASKS
+from app.services.geo import round_coord
 from app.services.times import valid_timezone
 
 Category = Literal["men", "women", "open"]
@@ -19,12 +20,25 @@ class ProfileIn(BaseModel):
     competitions_entered: int | None = Field(None, ge=0, le=500)
     city: str | None = Field(None, max_length=120)
     travel_radius_km: int | None = Field(None, ge=0, le=20000)
+    approx_lat: float | None = Field(None, ge=-90, le=90)  # stored rounded to ~1 km
+    approx_lon: float | None = Field(None, ge=-180, le=180)
     days_per_week: int | None = Field(None, ge=1, le=7)
     session_minutes: int | None = Field(None, ge=15, le=240)
     other_commitments: str | None = Field(None, max_length=1000)
     avoid_exercises: list[str] = []
     pain_flags: list[str] = []
     goal: Literal["participate", "perform"] | None = None
+
+    @field_validator("approx_lat", "approx_lon")
+    @classmethod
+    def _round_location(cls, v):
+        return round_coord(v)
+
+    @model_validator(mode="after")
+    def _both_coords(self):
+        if (self.approx_lat is None) != (self.approx_lon is None):
+            raise ValueError("enter both latitude and longitude, or neither")
+        return self
 
     @field_validator("pain_flags")
     @classmethod
@@ -133,6 +147,8 @@ class CompetitionIn(BaseModel):
     venue: str | None = None
     city: str | None = None
     country: str | None = None
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
     start_date: date
     start_time: time | None = None  # venue-local; requires timezone
     timezone: str | None = Field(None, max_length=64)
@@ -145,6 +161,8 @@ class CompetitionIn(BaseModel):
 
     @model_validator(mode="after")
     def _time_needs_zone(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("enter both venue latitude and longitude, or neither")
         if self.timezone is not None and not valid_timezone(self.timezone):
             raise ValueError(f"unknown time zone '{self.timezone}' (use an IANA name such as Asia/Manila)")
         if self.start_time is not None and not self.timezone:

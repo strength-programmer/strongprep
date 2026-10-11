@@ -51,6 +51,7 @@ export default function CompetitionDetail() {
         <div className="grid">
           <div><div className="field-label">Date</div>{fmtDate(c.start_date)}</div>
           <div><div className="field-label">Start time</div>{fmtVenueTime(c.start_time, c.timezone)}</div>
+          <div><div className="field-label">Distance from you</div>{c.approx_distance_km != null ? `~${c.approx_distance_km} km straight-line (not driving time)` : "Unknown: add your approximate location and the venue location"}</div>
           <div><div className="field-label">Registration deadline</div>{fmtDate(c.registration_deadline)}</div>
           <div><div className="field-label">Venue / city</div>{[c.venue, c.city, c.country].filter(Boolean).join(", ") || "Unknown"}</div>
           <div><div className="field-label">Organizer</div>{c.organizer ?? "Unknown"}</div>

@@ -52,7 +52,7 @@ function AthleteForm({ refData, initial, completeness, onSaved }: { refData: Ref
   const [f, setF] = useState({
     display_name: p.display_name ?? "", body_weight_kg: p.body_weight_kg?.toString() ?? "", age: p.age?.toString() ?? "",
     division_category: p.division_category ?? "", experience_level: p.experience_level ?? "", competitions_entered: p.competitions_entered?.toString() ?? "",
-    city: p.city ?? "", travel_radius_km: p.travel_radius_km?.toString() ?? "", days_per_week: p.days_per_week?.toString() ?? "",
+    city: p.city ?? "", travel_radius_km: p.travel_radius_km?.toString() ?? "", approx_lat: p.approx_lat?.toString() ?? "", approx_lon: p.approx_lon?.toString() ?? "", days_per_week: p.days_per_week?.toString() ?? "",
     session_minutes: p.session_minutes?.toString() ?? "", other_commitments: p.other_commitments ?? "", goal: p.goal ?? "",
     avoid_exercises: (p.avoid_exercises ?? []) as string[], pain_flags: (p.pain_flags ?? []) as string[],
   });
@@ -69,7 +69,7 @@ function AthleteForm({ refData, initial, completeness, onSaved }: { refData: Ref
       await api("/athlete-profile", { method: "PUT", body: {
         display_name: f.display_name || null, body_weight_kg: numOrNull(f.body_weight_kg), age: numOrNull(f.age),
         division_category: f.division_category || null, experience_level: f.experience_level || null,
-        competitions_entered: numOrNull(f.competitions_entered), city: f.city || null, travel_radius_km: numOrNull(f.travel_radius_km),
+        competitions_entered: numOrNull(f.competitions_entered), city: f.city || null, travel_radius_km: numOrNull(f.travel_radius_km), approx_lat: numOrNull(f.approx_lat), approx_lon: numOrNull(f.approx_lon),
         days_per_week: numOrNull(f.days_per_week), session_minutes: numOrNull(f.session_minutes),
         other_commitments: f.other_commitments || null, goal: f.goal || null,
         avoid_exercises: f.avoid_exercises, pain_flags: f.pain_flags,
@@ -100,6 +100,17 @@ function AthleteForm({ refData, initial, completeness, onSaved }: { refData: Ref
           <Field label="Competitions entered"><input type="number" min="0" value={f.competitions_entered} onChange={(e) => set("competitions_entered", e.target.value)} /></Field>
           <Field label="City (approximate)"><input value={f.city} onChange={(e) => set("city", e.target.value)} /></Field>
           <Field label="Travel radius (km)"><input type="number" min="0" value={f.travel_radius_km} onChange={(e) => set("travel_radius_km", e.target.value)} /></Field>
+        </div>
+        <div className="row">
+          <Field label="Approximate latitude" hint="Used only to estimate straight-line distance. Saved rounded to about 1 km; never enter your exact address."><input type="number" step="0.01" min="-90" max="90" value={f.approx_lat} onChange={(e) => set("approx_lat", e.target.value)} /></Field>
+          <Field label="Approximate longitude"><input type="number" step="0.01" min="-180" max="180" value={f.approx_lon} onChange={(e) => set("approx_lon", e.target.value)} /></Field>
+          <button type="button" className="btn" onClick={() => {
+            if (!navigator.geolocation) { setErr(new ApiError(0, "Your browser cannot share its location. Enter coordinates by hand.")); return; }
+            navigator.geolocation.getCurrentPosition(
+              (pos) => { set("approx_lat", pos.coords.latitude.toFixed(2)); set("approx_lon", pos.coords.longitude.toFixed(2)); },
+              () => setErr(new ApiError(0, "Location permission was not granted. You can enter approximate coordinates by hand.")),
+              { maximumAge: 600000, timeout: 10000 });
+          }}>Use my current location (rounded)</button>
         </div>
         <div className="row">
           <Field label="Training days per week" hint="1–7"><input type="number" min="1" max="7" value={f.days_per_week} onChange={(e) => set("days_per_week", e.target.value)} /></Field>

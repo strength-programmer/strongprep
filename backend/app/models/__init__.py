@@ -24,6 +24,8 @@ class AthleteProfile(Base):
     competitions_entered: Mapped[int | None] = mapped_column(Integer)
     city: Mapped[str | None] = mapped_column(String(120))
     travel_radius_km: Mapped[int | None] = mapped_column(Integer)
+    approx_lat: Mapped[float | None] = mapped_column(Float)  # rounded to 2 decimals; never an exact address
+    approx_lon: Mapped[float | None] = mapped_column(Float)
     days_per_week: Mapped[int | None] = mapped_column(Integer)
     session_minutes: Mapped[int | None] = mapped_column(Integer)
     other_commitments: Mapped[str | None] = mapped_column(Text)
@@ -79,6 +81,8 @@ class Competition(Base):
     venue: Mapped[str | None] = mapped_column(String(200))
     city: Mapped[str | None] = mapped_column(String(120))
     country: Mapped[str | None] = mapped_column(String(80))
+    latitude: Mapped[float | None] = mapped_column(Float)  # approximate venue location
+    longitude: Mapped[float | None] = mapped_column(Float)
     start_date: Mapped[date] = mapped_column(Date)
     start_time: Mapped[time | None] = mapped_column(Time)  # venue-local wall-clock time; None = not published
     timezone: Mapped[str | None] = mapped_column(String(64))  # IANA name, e.g. Asia/Manila

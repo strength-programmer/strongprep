@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import inspect, or_
 from sqlalchemy.orm import Session, selectinload
@@ -18,6 +18,7 @@ from app.schemas import (AiSettingsIn, AssessmentIn, CompetitionIn, EquipmentIte
                          TrainingLogIn)
 from app.services import assessment as assess_svc
 from app.services import ai_settings as ai_svc
+from app.services import geo
 from app.services.times import to_utc
 from app.services import evidence as evidence_svc
 from app.services import planning, secrets
@@ -182,8 +183,9 @@ def _comp_summary(c: Competition) -> dict:
 
 
 @router.get("/competitions")
-def list_competitions(q: str | None = None, city: str | None = None, date_from: date | None = None,
+def list_competitions(response: Response, q: str | None = None, city: str | None = None, date_from: date | None = None,
                       date_to: date | None = None, status: str | None = None,
+                      within_km: float | None = Query(None, gt=0, le=20000),
                       owner: str | None = Depends(optional_owner), db: Session = Depends(get_db)):
     query = db.query(Competition).options(selectinload(Competition.divisions).selectinload(CompetitionDivision.events))
     query = query.filter(or_(Competition.owner_id.is_(None), Competition.owner_id == owner) if owner else Competition.owner_id.is_(None))
@@ -197,7 +199,24 @@ def list_competitions(q: str | None = None, city: str | None = None, date_from: 
         query = query.filter(Competition.start_date <= date_to)
     if status:
         query = query.filter(Competition.status == status)
-    return [_comp_summary(c) for c in query.order_by(Competition.start_date)]
+    prof = _profile(db, owner) if owner else None
+    if within_km is not None and (prof is None or prof.approx_lat is None):
+        raise HTTPException(422, detail="Add your approximate location in Profile to filter by distance.")
+    out, unknown = [], 0
+    for c in query.order_by(Competition.start_date):
+        s = _comp_summary(c)
+        km = geo.distance_km(prof, c)
+        s["approx_distance_km"] = km  # straight-line, NOT driving time
+        if within_km is not None:
+            if km is None:
+                unknown += 1  # cannot be judged; reported, never silently kept or dropped
+                continue
+            if km > within_km:
+                continue
+        out.append(s)
+    if within_km is not None:
+        response.headers["X-Unknown-Distance-Count"] = str(unknown)
+    return out
 
 
 def _event_dict(e: EventSpecification, ev_by_event: dict) -> dict:
@@ -220,6 +239,7 @@ def get_competition(cid: int, owner: str | None = Depends(optional_owner), db: S
     comp_ev = db.query(SourceEvidence).filter_by(entity_type="competition", entity_id=c.id).all()
     out = d(c)
     out["start_at_utc"] = _start_utc(c)
+    out["approx_distance_km"] = geo.distance_km(_profile(db, owner) if owner else None, c)
     out["is_shared_catalog"] = c.owner_id is None
     out["evidence"] = [d(x) for x in comp_ev]
     out["divisions"] = [{**d(v), "events": [_event_dict(e, by_event) for e in v.events]} for v in c.divisions]
