@@ -1,0 +1,26 @@
+[project]
+name = "strongprep-backend"
+version = "0.1.0"
+description = "StrongPrep API: strongman competition preparation assistant (local demo build)"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic-settings>=2.4",
+  "sqlalchemy>=2.0",
+  "alembic>=1.13",
+  "anthropic>=0.40",
+  "httpx>=0.27",
+  "pyjwt[crypto]>=2.8",
+]
+
+[project.optional-dependencies]
+live = ["psycopg[binary]>=3.2"]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
