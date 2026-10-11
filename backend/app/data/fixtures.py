@@ -83,6 +83,18 @@ COHORTS = [
 ]
 
 
+def _fixture_evidence(db, comp, div, ev, defn_event, now):
+    """Evidence rows for one fixture event and its division (idempotent, never duplicates)."""
+    from app.services.evidence_rows import division_fields, ensure_evidence, event_fields
+    name, task, scoring, load, per_hand, T, D, text, unit, rules = defn_event
+    excerpt = f"Fictional rule text: {text or 'load not yet published'}. {rules}"
+    for field in event_fields(ev):
+        ensure_evidence(db, "event", ev.id, field, url=comp.source_url, retrieved_at=now, excerpt=excerpt, review_status="fixture")
+    for field in division_fields(div):
+        ensure_evidence(db, "division", div.id, field, url=comp.source_url, retrieved_at=now,
+                        excerpt=f"Fictional entry rule for {div.name}: {div.eligibility_notes or 'see division limits'}", review_status="fixture")
+
+
 def seed_templates(db):
     from app.models import ExerciseTemplate
     existing = {t.key for t in db.query(ExerciseTemplate).all()}
@@ -106,6 +118,13 @@ def _backfill_times(db):
             row.start_time, row.timezone = c["time"], c["tz"]
         if c.get("lat") is not None and row.latitude is None and row.longitude is None:
             row.latitude, row.longitude = c["lat"], c["lon"]
+        for d_def in c["divisions"]:
+            div = next((v for v in row.divisions if v.name == d_def["name"]), None)
+            for e_def in d_def["events"] if div else []:
+                ev = next((x for x in div.events if x.name == e_def[0]), None)
+                if ev:
+                    _fixture_evidence(db, row, div, ev, e_def, datetime.now(timezone.utc))
+    db.flush()
     db.commit()
 
 
@@ -144,9 +163,7 @@ def seed_competitions(db, today: date | None = None):
                                         distance_m=float(D) if D else None, rules_text=rules, verification_status="fixture")
                 db.add(ev)
                 db.flush()
-                db.add(SourceEvidence(entity_type="event", entity_id=ev.id, field_name="load_kg", url=comp.source_url,
-                                      retrieved_at=now, excerpt=f"Fictional rule text: {text or 'load not yet published'}. {rules}",
-                                      review_status="fixture"))
+                _fixture_evidence(db, comp, div, ev, e, now)
     rng = random.Random(20261011)
     for c in COHORTS:
         base_date = today - timedelta(days=200)

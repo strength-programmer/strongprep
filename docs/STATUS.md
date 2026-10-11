@@ -1,16 +1,16 @@
 # Implementation checkpoint
 
 Updated: October 11, 2026.
-Milestones 00-05 and a synthetic-data version of 06 are implemented. Finish-the-project plan: A1-A4, B1, B2 done (frontend localhost bind; report and plan staleness; per-hand equipment limits; venue time zones; approximate distance + radius filter). Next: **05b contract alignment and evidence staleness** (see ROADMAP).
+Milestones 00-05 and a synthetic-data version of 06 are implemented. Finish-the-project plan: A1-A4, B1, B2, B3 done (frontend localhost bind; report and plan staleness; per-hand equipment limits; venue time zones; approximate distance + radius filter; per-field source evidence with confirm/conflict review). Next: **05b contract alignment and evidence staleness** (see ROADMAP).
 
 ## Implemented and verified
-Verified by running: backend `pytest` (101 passing), frontend `vitest` (5), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
+Verified by running: backend `pytest` (115 passing), frontend `vitest` (5), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
 
 | Area | Where | Notes |
 | --- | --- | --- |
 | Config / modes / auth | `backend/app/config.py`, `api/auth.py`, `main.py` | Demo: fixed identity, loopback only, SQLite only (startup refuses otherwise). Live: Supabase JWT (HS256 secret or JWKS), no demo fallback. Live tested with **mocked** tokens only |
 | Athlete, equipment, performance | `api/routes.py`, `models`, `schemas` | Single `PUT /athlete-profile`; equipment replaced as a list; records CRUD |
-| Competitions | `api/routes.py`, `services/{times,geo}.py`, `data/fixtures.py` | 5 fictional competitions, manual entry, event edit bumps version + keeps `EventSpecRevision`; shared catalog read-only |
+| Competitions | `api/routes.py`, `services/{times,geo,evidence_rows}.py`, `data/fixtures.py` | 5 fictional competitions, manual entry, event edit bumps version + keeps `EventSpecRevision`; shared catalog read-only |
 | Assessments | `services/assessment.py`, `services/evidence.py` | Eligibility + event labels; stale on spec-version, status, or athlete-evidence change |
 | Benchmarks | `services/benchmarks.py`, `HistoricalResult` | Synthetic cohorts only; exact-match cohort; percentile at n>=20 |
 | Planning | `services/planning.py`, `services/evidence.py`, `integrations/ai.py` | Mock planner + Claude adapter (fake-client tested only) + OpenAI-compatible adapter for Qwen/proxies (`AI_PROVIDER=openai_compatible`, mocked-transport tested only, never run against a real endpoint); hard validator; draft -> saved |

@@ -276,6 +276,8 @@ def build_assessment(profile, equipment: list, records: list, competition, divis
         a = assess_event(ev, records, today, by_impl)
         if ev.load_kg is None and ev.scoring_type != "custom":
             data_gaps.append(f"'{ev.name}': load missing")
+        if getattr(ev, "verification_status", None) == "conflicting":
+            data_gaps.append(f"'{ev.name}': its source evidence is marked conflicting; confirm it before relying on this event.")
         if ev.original_unit in (None, "unknown") and ev.load_kg is not None:
             data_gaps.append(f"'{ev.name}': original unit not confirmed")
         key = CohortKey(ev.task_key, ev.scoring_type, division.category, ev.load_kg, bool(ev.load_per_hand), ev.time_limit_s, ev.distance_m)
@@ -285,7 +287,9 @@ def build_assessment(profile, equipment: list, records: list, competition, divis
     for i, e in enumerate(ranked, 1):
         e["priority"] = i
     summary = {s: sum(1 for e in events if e["status"] == s) for s in STATUS_LABELS}
-    if competition.verification_status != "verified":
+    if competition.verification_status == "conflicting":
+        data_gaps.append("Some source evidence for this competition is marked conflicting; its requirements may be wrong.")
+    elif competition.verification_status != "verified":
         data_gaps.append("Competition details are not verified by an organizer or reviewer.")
     return {
         "calculation_version": CALCULATION_VERSION,

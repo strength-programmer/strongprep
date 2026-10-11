@@ -14,10 +14,11 @@ from app.integrations.search_extract import integration_status
 from app.models import (AiSetting, Assessment, AthleteProfile, Competition, CompetitionDivision, EquipmentAccess, EventSpecification,
                         EventSpecRevision, ExerciseTemplate, HistoricalResult, PerformanceRecord, PreparationPlan,
                         SourceEvidence, TrainingLog)
-from app.schemas import (AiSettingsIn, AssessmentIn, CompetitionIn, EquipmentItem, EventIn, PerformanceIn, PlanIn, ProfileIn, TargetIn,
+from app.schemas import (AiSettingsIn, AssessmentIn, EvidenceReviewIn, CompetitionIn, EquipmentItem, EventIn, PerformanceIn, PlanIn, ProfileIn, TargetIn,
                          TrainingLogIn)
 from app.services import assessment as assess_svc
 from app.services import ai_settings as ai_svc
+from app.services import evidence_rows
 from app.services import geo
 from app.services.times import to_utc
 from app.services import evidence as evidence_svc
@@ -242,7 +243,12 @@ def get_competition(cid: int, owner: str | None = Depends(optional_owner), db: S
     out["approx_distance_km"] = geo.distance_km(_profile(db, owner) if owner else None, c)
     out["is_shared_catalog"] = c.owner_id is None
     out["evidence"] = [d(x) for x in comp_ev]
-    out["divisions"] = [{**d(v), "events": [_event_dict(e, by_event) for e in v.events]} for v in c.divisions]
+    div_ev = db.query(SourceEvidence).filter(SourceEvidence.entity_type == "division",
+                                             SourceEvidence.entity_id.in_([v.id for v in c.divisions] or [0])).all()
+    by_div: dict = {}
+    for x in div_ev:
+        by_div.setdefault(x.entity_id, []).append(d(x))
+    out["divisions"] = [{**d(v), "evidence": by_div.get(v.id, []), "events": [_event_dict(e, by_event) for e in v.events]} for v in c.divisions]
     return out
 
 
@@ -259,15 +265,49 @@ def create_competition(body: CompetitionIn, owner: str = Depends(current_owner),
         div = CompetitionDivision(competition_id=comp.id, **dv.model_dump(exclude={"events"}))
         db.add(div)
         db.flush()
+        for field in evidence_rows.division_fields(div):
+            evidence_rows.ensure_evidence(db, "division", div.id, field, url=comp.source_url, retrieved_at=now(),
+                                          excerpt=dv.eligibility_notes or "Entered manually; no source text provided.",
+                                          review_status="manual_unreviewed")
         for i, ev in enumerate(dv.events):
             e = EventSpecification(division_id=div.id, position=i, verification_status="manual_unreviewed", **ev.model_dump())
             db.add(e)
             db.flush()
-            db.add(SourceEvidence(entity_type="event", entity_id=e.id, field_name="all", url=comp.source_url, retrieved_at=now(),
-                                  excerpt=ev.original_load_text or "Entered manually; original text not provided.",
-                                  review_status="manual_unreviewed"))
+            excerpt = ev.rules_text or ev.original_load_text or "Entered manually; no source text provided."
+            for field in evidence_rows.event_fields(e):
+                evidence_rows.ensure_evidence(db, "event", e.id, field, url=comp.source_url, retrieved_at=now(), excerpt=excerpt,
+                                              review_status="manual_unreviewed")
     db.commit()
     return get_competition(comp.id, owner, db)
+
+
+def _competition_of_evidence(db: Session, ev: SourceEvidence) -> Competition | None:
+    if ev.entity_type == "competition":
+        return db.get(Competition, ev.entity_id)
+    if ev.entity_type == "division":
+        div = db.get(CompetitionDivision, ev.entity_id)
+        return div.competition if div else None
+    if ev.entity_type == "event":
+        e = db.get(EventSpecification, ev.entity_id)
+        return e.division.competition if e else None
+    return None
+
+
+@router.patch("/source-evidence/{evid}")
+def review_evidence(evid: int, body: EvidenceReviewIn, owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+    ev = db.get(SourceEvidence, evid)
+    comp = _competition_of_evidence(db, ev) if ev else None
+    if comp is None or comp.owner_id not in (None, owner):
+        raise HTTPException(404, "Source evidence not found.")
+    if comp.owner_id is None:
+        raise HTTPException(403, "Shared catalog evidence is read-only.")
+    ev.review_status = body.review_status
+    if body.review_status == "confirmed":
+        comp.last_confirmed_at = now()
+    evidence_rows.recompute_verification(db, comp)
+    db.commit()
+    return {"evidence": d(ev), "competition": {"id": comp.id, "verification_status": comp.verification_status,
+                                                "last_confirmed_at": comp.last_confirmed_at}}
 
 
 @router.put("/events/{eid}")

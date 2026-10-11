@@ -12,3 +12,4 @@ next-env.d.ts
 uv.out
 uv.err
 .strongprep-secret
+.next-e2e/

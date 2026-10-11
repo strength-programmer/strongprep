@@ -5,6 +5,8 @@ import { api, ApiError, useApi } from "@/lib/api";
 import { fmtDate, fmtVenueTime, kg, metres, numOrNull, seconds } from "@/lib/format";
 import { Badge, Card, CompStatusBadge, DemoBadge, ErrorBox, Loading } from "@/components/ui";
 
+const REVIEW_TONE: Record<string, "good" | "bad" | "warn" | "neutral"> = { confirmed: "good", conflicting: "bad", unverified: "warn", manual_unreviewed: "warn", fixture: "neutral" };
+
 export default function CompetitionDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: c, error, loading, reload } = useApi(`/competitions/${id}`);
@@ -13,6 +15,7 @@ export default function CompetitionDetail() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<ApiError | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [reviewBusy, setReviewBusy] = useState<number | null>(null);
 
   if (loading) return <Loading what="Loading competition" />;
   if (error) return <ErrorBox error={error} onRetry={reload} />;
@@ -20,6 +23,15 @@ export default function CompetitionDetail() {
 
   const div = c.divisions.find((d: any) => d.id === divId) ?? c.divisions[0];
   const editable = !c.is_shared_catalog;
+  const sources = [
+    ...c.evidence.map((x: any) => ({ ...x, label: "Competition" })),
+    ...div.evidence.map((x: any) => ({ ...x, label: `${div.name} (division)` })),
+    ...div.events.flatMap((e: any) => e.evidence.map((x: any) => ({ ...x, label: e.name }))),
+  ];
+  const setReview = async (id: number, review_status: string) => {
+    setReviewBusy(id); setActionError(null);
+    try { await api(`/source-evidence/${id}`, { method: "PATCH", body: { review_status } }); await reload(); } catch (e) { setActionError(e as ApiError); } finally { setReviewBusy(null); }
+  };
 
   const setTarget = async () => {
     setBusy(true); setActionError(null); setMsg(null);
@@ -42,8 +54,9 @@ export default function CompetitionDetail() {
       <h1>{c.title}</h1>
       <p>
         {c.is_demo && <DemoBadge label={c.demo_label} />} <CompStatusBadge status={c.status} />{" "}
-        <Badge tone={c.verification_status === "verified" ? "good" : "warn"}>{c.verification_status === "fixture" ? "fixture data" : c.verification_status}</Badge>
+        <Badge tone={c.verification_status === "verified" ? "good" : c.verification_status === "conflicting" ? "bad" : "warn"}>{c.verification_status === "fixture" ? "fixture data" : c.verification_status}</Badge>
       </p>
+      {c.verification_status === "conflicting" && <div className="alert alert-error" role="alert"><strong>Some sources are flagged as conflicting.</strong> The requirements below may be wrong until you resolve the flagged sources.</div>}
       {c.is_demo && <div className="alert alert-info">{c.demo_label}. Loads and rules below are invented for demonstration.</div>}
       {c.status !== "upcoming" && <div className="alert alert-warn">This competition is {c.status}; plans can only be generated for upcoming competitions.</div>}
 
@@ -84,9 +97,20 @@ export default function CompetitionDetail() {
             </table>
           </div>
         )}
-        <h3>Sources</h3>
-        {[...div.events.flatMap((e: any) => e.evidence.map((x: any) => ({ ...x, event: e.name }))), ...c.evidence.map((x: any) => ({ ...x, event: "Competition" }))].map((x: any) => (
-          <p key={`${x.entity_type}-${x.id}`} className="small"><strong>{x.event}</strong> ({x.field_name}) · <Badge>{x.review_status}</Badge> · {x.url ?? "no URL"}<br /><span className="muted">“{x.excerpt}”</span></p>
+        <h3>Sources and review</h3>
+        {!editable && <p className="small muted">Sources for the fictional catalog are read-only.</p>}
+        {sources.length === 0 ? <p className="small muted">No source evidence recorded.</p> : sources.map((x: any) => (
+          <div key={`${x.entity_type}-${x.id}`} className="small" style={{ margin: ".6rem 0" }}>
+            <strong>{x.label}</strong> ({x.field_name.replace(/_/g, " ")}) · <Badge tone={REVIEW_TONE[x.review_status] ?? "neutral"}>{x.review_status.replace(/_/g, " ")}</Badge> · {x.url ?? "no URL"}
+            <br /><span className="muted">“{x.excerpt}”</span>
+            {editable && (
+              <div className="row" style={{ marginTop: ".3rem", gap: ".4rem" }}>
+                <button className="btn btn-small" disabled={reviewBusy === x.id || x.review_status === "confirmed"} onClick={() => setReview(x.id, "confirmed")}>Confirm</button>
+                <button className="btn btn-small" disabled={reviewBusy === x.id || x.review_status === "conflicting"} onClick={() => setReview(x.id, "conflicting")}>Flag conflict</button>
+                <button className="btn btn-small" disabled={reviewBusy === x.id || x.review_status === "unverified"} onClick={() => setReview(x.id, "unverified")}>Reset</button>
+              </div>
+            )}
+          </div>
         ))}
         <ErrorBox error={actionError} />
         {msg && <div className="alert alert-ok" role="status">{msg}</div>}
@@ -128,7 +152,7 @@ function EventRow({ e, i, editable, onSaved }: { e: any; i: number; editable: bo
         </td>
         <td className="num">{editing ? <input aria-label="Time limit s" type="number" value={f.time} onChange={(x) => setF({ ...f, time: x.target.value })} /> : seconds(e.time_limit_s)}</td>
         <td className="num">{editing ? <input aria-label="Distance m" type="number" value={f.dist} onChange={(x) => setF({ ...f, dist: x.target.value })} /> : metres(e.distance_m)}</td>
-        <td><Badge tone={e.verification_status === "verified" ? "good" : "warn"}>{e.verification_status.replace("_", " ")}</Badge> <span className="small muted">v{e.version}</span></td>
+        <td><Badge tone={e.verification_status === "verified" ? "good" : e.verification_status === "conflicting" ? "bad" : "warn"}>{e.verification_status.replace("_", " ")}</Badge> <span className="small muted">v{e.version}</span></td>
         {editable && (
           <td>
             {editing ? (<><button className="btn btn-small btn-primary" onClick={save}>Save</button> <button className="btn btn-small" onClick={() => setEditing(false)}>Cancel</button></>) : (

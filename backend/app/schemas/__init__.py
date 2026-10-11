@@ -170,6 +170,11 @@ class CompetitionIn(BaseModel):
         return self
 
 
+class EvidenceReviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    review_status: Literal["unverified", "confirmed", "conflicting"]
+
+
 class AssessmentIn(BaseModel):
     competition_id: int
     division_id: int
