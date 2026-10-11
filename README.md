@@ -76,6 +76,10 @@ Frontend `.env.local`: `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:800
 
 **Demo mode** uses one fixed identity, accepts loopback clients only (non-local requests get 403), and refuses to start against a non-SQLite database. **Live mode** requires a valid Supabase-issued bearer token on every private route; there is no fallback to the demo identity. The owner always comes from the verified token `sub`, never from the request body, and every private query filters by it.
 
+### Adding an AI key in the app
+
+Open **Settings → AI assistant**, choose Claude or a Qwen/OpenAI-compatible endpoint, enter the model name (and base URL for Qwen), paste the key, **Save**, then **Test connection**. The backend stores the key encrypted (Fernet) per account and never sends it back to the browser (only "…last4" is shown); it is sent only to the provider you chose. Demo mode creates `backend\.strongprep-secret` automatically (gitignored; deleting it makes saved keys unreadable, so just re-enter them). Live mode requires `APP_SECRET_KEY` in the backend environment and enforces https plus a block on private/loopback base URLs. App-saved settings override the `.env` AI settings; "Remove saved key" reverts to them. After pulling this change run `alembic upgrade head` once (adds the `ai_settings` table).
+
 ### Live-mode checklist (not required for the demo)
 
 1. Create a Supabase project; use its Postgres connection string as `DATABASE_URL` (run `pip install "psycopg[binary]"` — already in the lock file) and run `alembic upgrade head`, then `python -m app.seed`.
@@ -101,7 +105,7 @@ frontend/app (routes)  components/  lib/
 
 ## Known limitations
 
-- The UI was type-checked, built, and every route was served, but **not exercised in a real browser** during development; expect small polish issues.
+- The UI was rendered and screenshotted in headless Chromium (desktop, mobile, light/dark; no console errors) after the redesign, but forms were not click-tested end to end; expect small polish issues.
 - The Claude adapter is tested only against a fake client; it has not been run against the live API. Tavily/Firecrawl are interfaces plus mocks only; competition input is manual.
 - Live Supabase auth/Postgres was **not** tested against a real project (only mocked tokens on SQLite). Migrations were generated against SQLite.
 - Exercise templates are unreviewed demo content; the gap-label rules and the 20-athlete threshold await coach review.

@@ -178,3 +178,11 @@ class TrainingLogIn(BaseModel):
         if v > date.today():
             raise ValueError("session date cannot be in the future")
         return v
+
+
+class AiSettingsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal["mock", "claude", "openai_compatible"]
+    base_url: str | None = Field(None, max_length=300)
+    model: str | None = Field(None, max_length=120)
+    api_key: str | None = Field(None, max_length=600)  # optional on update: omit to keep the stored key

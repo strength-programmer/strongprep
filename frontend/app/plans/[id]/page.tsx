@@ -10,6 +10,7 @@ export default function PlanPage() {
   const { data: p, error, loading, reload, setData } = useApi(`/preparation-plans/${id}`);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
+  const [week, setWeek] = useState(1);
 
   if (loading) return <Loading what="Loading plan" />;
   if (error) return <ErrorBox error={error} onRetry={reload} />;
@@ -62,12 +63,18 @@ export default function PlanPage() {
       </Card>
 
       <Card title="Weekly sessions">
-        {c.weeks.map((w: any) => (
-          <details key={w.week} open={w.week === 1}>
-            <summary>Week {w.week} · {w.phase} · {w.sessions.length} sessions</summary>
+        <div className="tabs" role="tablist" aria-label="Weeks">
+          {c.weeks.map((w: any) => (
+            <button key={w.week} role="tab" className="tab" aria-selected={w.week === week} onClick={() => setWeek(w.week)}>Wk {w.week}{w.phase === "taper" ? " · taper" : ""}</button>
+          ))}
+        </div>
+        {c.weeks.filter((w: any) => w.week === week).map((w: any) => (
+          <div key={w.week}>
+            <p className="small muted">Phase: <strong>{w.phase}</strong> · {w.sessions.length} sessions this week</p>
             {w.sessions.map((s: any) => (
               <div className="session" key={s.id}>
-                <strong>{s.name}</strong> {s.access_session && <Badge tone="warn">needs agreed access</Badge>} <span className="small muted">~{s.estimated_minutes} min</span>
+                <div className="event-top"><strong>{s.name}</strong><span className="small muted">~{s.estimated_minutes} min</span></div>
+                {s.access_session && <Badge tone="warn">needs your agreed access</Badge>}
                 <div className="small">{s.purpose}</div>
                 <div className="table-wrap">
                   <table>
@@ -75,10 +82,10 @@ export default function PlanPage() {
                     <tbody>{s.exercises.map((x: any, i: number) => <tr key={i}><td>{x.name}</td><td className="num">{x.sets}</td><td>{x.reps}</td><td>{x.intensity}</td></tr>)}</tbody>
                   </table>
                 </div>
-                <Link className="small" href={`/training?plan=${p.id}&session=${s.id}`}>Log this session</Link>
+                <p style={{ marginBottom: 0 }}><Link className="btn btn-small" href={`/training?plan=${p.id}&session=${s.id}`}>Log this session</Link></p>
               </div>
             ))}
-          </details>
+          </div>
         ))}
       </Card>
 
@@ -97,8 +104,8 @@ export default function PlanPage() {
         <p className="small muted">Checks passed before this plan was shown: {c.validation.checked.join(", ")}.</p>
       </Card>
 
-      <div className="row">
-        <button className="btn btn-primary" onClick={save} disabled={busy || p.review_state === "saved" || p.stale}>{p.review_state === "saved" ? "Saved" : busy ? "Saving…" : "Review done, save plan"}</button>
+      <div className="sticky-actions">
+        <button className="btn btn-primary btn-lg" onClick={save} disabled={busy || p.review_state === "saved" || p.stale}>{p.review_state === "saved" ? "Saved" : busy ? "Saving…" : "Review done, save plan"}</button>
         <Link className="btn" href="/training">Go to training log</Link>
       </div>
     </>

@@ -198,11 +198,63 @@ class ClaudePlanProvider:
             raise ProviderError("Claude returned invalid JSON.") from exc
 
 
+def _extract_json_object(text: str) -> dict:
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        raise ProviderError("The model did not return a JSON object.")
+    try:
+        return json.loads(m.group(0))
+    except json.JSONDecodeError as exc:
+        raise ProviderError("The model returned invalid JSON.") from exc
+
+
+class OpenAICompatiblePlanProvider:
+    """Chat-completions adapter for Qwen (DashScope) or any OpenAI-compatible endpoint, via httpx.
+    The key is only ever sent to LLM_BASE_URL; error messages never include it."""
+
+    name = "openai_compatible"
+    _default_transport = None  # tests inject an httpx transport here
+
+    def __init__(self, settings: Settings, transport=None):
+        missing = [n for n, v in (("LLM_BASE_URL", settings.llm_base_url), ("LLM_API_KEY", settings.llm_api_key),
+                                  ("LLM_MODEL", settings.llm_model)) if not v]
+        if missing:
+            raise ProviderUnavailable(f"AI_PROVIDER=openai_compatible but {', '.join(missing)} not set.")
+        self.url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+        self.model = settings.llm_model
+        self._key = settings.llm_api_key
+        self._transport = transport or type(self)._default_transport
+
+    def generate_plan(self, ctx: dict) -> dict:
+        import httpx
+        payload = {k: ctx[k] for k in ("competition_title", "weeks_total", "days_per_week", "session_minutes", "events", "paused")}
+        payload["allowed_templates"] = ctx["templates"]
+        body = {"model": self.model, "temperature": 0.2, "max_tokens": 8000,
+                "messages": [{"role": "system", "content": PLAN_INSTRUCTIONS},
+                             {"role": "user", "content": json.dumps(payload)}]}
+        try:
+            with httpx.Client(timeout=120.0, transport=self._transport) as client:
+                res = client.post(self.url, json=body, headers={"Authorization": f"Bearer {self._key}"})
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"LLM request failed: {type(exc).__name__}") from exc
+        if res.status_code in (401, 403):
+            raise ProviderError("The LLM provider rejected the credentials.")
+        if res.status_code >= 400:
+            raise ProviderError(f"The LLM provider returned HTTP {res.status_code}.")
+        try:
+            text = res.json()["choices"][0]["message"]["content"] or ""
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise ProviderError("Unexpected response shape from the LLM provider.") from exc
+        return _extract_json_object(text)
+
+
 def get_provider(settings: Settings) -> PlanProvider:
     if settings.ai_provider == "mock":
         return MockPlanProvider()
     if settings.ai_provider == "claude":
         return ClaudePlanProvider(settings)
+    if settings.ai_provider == "openai_compatible":
+        return OpenAICompatiblePlanProvider(settings)
     raise ProviderUnavailable(f"Unknown AI_PROVIDER '{settings.ai_provider}'.")
 
 
@@ -210,7 +262,36 @@ def ai_status(settings: Settings) -> dict:
     if settings.ai_provider == "mock":
         return {"provider": "mock", "available": True, "detail": "Mock AI: deterministic output, not Claude."}
     try:
-        ClaudePlanProvider(settings)
-        return {"provider": "claude", "available": True, "model": settings.claude_model}
+        p = get_provider(settings)
+        return {"provider": p.name, "available": True, "model": getattr(p, "model", None)}
     except ProviderUnavailable as exc:
         return {"provider": settings.ai_provider, "available": False, "detail": str(exc)}
+
+
+def check_connection(settings: Settings) -> tuple[bool, str]:
+    """Tiny live call to verify a provider/key/model. Messages never include the key or provider response bodies."""
+    try:
+        provider = get_provider(settings)
+    except ProviderUnavailable as exc:
+        return False, str(exc)
+    if provider.name == "mock":
+        return True, "Mock AI needs no key."
+    try:
+        if provider.name == "claude":
+            provider.client.messages.create(model=provider.model, max_tokens=16,
+                                            messages=[{"role": "user", "content": "Reply with OK."}])
+            return True, "Claude responded."
+        import httpx
+        with httpx.Client(timeout=30.0, transport=provider._transport) as client:
+            res = client.post(provider.url, headers={"Authorization": f"Bearer {provider._key}"},
+                              json={"model": provider.model, "max_tokens": 16,
+                                    "messages": [{"role": "user", "content": "Reply with OK."}]})
+        if res.status_code in (401, 403):
+            return False, "The provider rejected the API key."
+        if res.status_code == 404:
+            return False, "Not found (HTTP 404): check the base URL and model name."
+        if res.status_code >= 400:
+            return False, f"The provider returned HTTP {res.status_code}."
+        return True, "The provider responded."
+    except Exception as exc:  # never leak details that could contain the key
+        return False, f"Request failed: {type(exc).__name__}."

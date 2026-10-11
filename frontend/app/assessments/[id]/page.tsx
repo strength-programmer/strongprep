@@ -6,12 +6,14 @@ import { api, ApiError, useApi } from "@/lib/api";
 import { fmtDate, kg, metres, ratioText, seconds } from "@/lib/format";
 import { Badge, Card, DemoBadge, ErrorBox, Loading, StatusBadge } from "@/components/ui";
 
-const BASIS_TEXT: Record<string, string> = { observed: "Observed", inferred: "Inferred", unavailable: "Unavailable" };
+const BASIS_TEXT: Record<string, string> = { observed: "Observed", inferred: "Inferred", unavailable: "No evidence" };
 const ELIG_TONE: Record<string, "good" | "bad" | "warn"> = { eligible: "good", ineligible: "bad", needs_confirmation: "warn" };
 
 export default function AssessmentPage() {
   const { id } = useParams<{ id: string }>();
   const { data: a, error, loading, reload } = useApi(`/assessments/${id}`);
+  const { data: st } = useApi("/status");
+  const ai = st?.ai;
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
@@ -63,29 +65,34 @@ export default function AssessmentPage() {
       </Card>
 
       <Card title="2 · Event-level preparation gaps">
-        <p className="small muted">{r.disclaimer} Labels are product rules awaiting coach review, not validated readiness categories. Load ratio compares only the same task on the same implement; 1.10 does not mean “110% ready”.</p>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th className="num">Priority</th><th>Event</th><th>Requirement</th><th>Conclusion</th><th className="num">Load ratio</th><th>Basis</th><th>Next step</th></tr></thead>
-            <tbody>
-              {[...r.events].sort((x: any, y: any) => x.priority - y.priority).map((e: any) => (
-                <tr key={e.event_id}>
-                  <td className="num">{e.priority}</td>
-                  <td><strong>{e.event_name}</strong><div className="small muted">{e.scoring_type.replace("_", " ")}</div></td>
-                  <td className="small">
-                    {kg(e.requirement.load_kg, e.requirement.load_per_hand)}
-                    {e.requirement.time_limit_s != null && <> · limit {seconds(e.requirement.time_limit_s)}</>}
-                    {e.requirement.distance_m != null && <> · {metres(e.requirement.distance_m)}</>}
-                  </td>
-                  <td><StatusBadge status={e.status} /><div className="small">{e.detail}</div></td>
-                  <td className="num">{ratioText(e.load_ratio)}</td>
-                  <td>{BASIS_TEXT[e.basis]}</td>
-                  <td className="small">{e.next_step}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <p className="small muted">{r.disclaimer} Labels are product rules awaiting coach review, not validated readiness categories. The tracker shows three facts (not a score): the event requirement is known, you have a record on this exact implement/task, and that record meets the requirement.</p>
+        {[...r.events].sort((x: any, y: any) => x.priority - y.priority).map((e: any) => {
+          const known = e.requirement.load_kg != null && e.scoring_type !== "custom";
+          const hasEvidence = e.evidence.some((x: any) => x.comparable);
+          const meets = e.status === "demonstrated";
+          return (
+            <article key={e.event_id} className={`event-card s-${e.status}`}>
+              <div className="event-top">
+                <span className="name">{e.event_name}</span>
+                <span className="prio">Priority {e.priority} of {r.events.length}</span>
+              </div>
+              <div><StatusBadge status={e.status} /> <Badge>{BASIS_TEXT[e.basis]}</Badge></div>
+              <div className="chips">
+                <span className="chip">{e.scoring_type.replace("_", " ")}</span>
+                <span className="chip">{kg(e.requirement.load_kg, e.requirement.load_per_hand)}</span>
+                {e.requirement.time_limit_s != null && <span className="chip">limit {seconds(e.requirement.time_limit_s)}</span>}
+                {e.requirement.distance_m != null && <span className="chip">{metres(e.requirement.distance_m)}</span>}
+                {e.load_ratio != null && <span className="chip" title="Same task, same implement only. Not a readiness percentage.">load ratio {ratioText(e.load_ratio)}</span>}
+              </div>
+              <div role="img" aria-label={`Requirement known: ${known ? "yes" : "no"}. Comparable record: ${hasEvidence ? "yes" : "no"}. Meets requirement: ${meets ? "yes" : "no"}.`}>
+                <div className="track"><div className={`seg ${known ? "on" : ""}`} /><div className={`seg ${hasEvidence ? "on" : ""}`} /><div className={`seg ${meets ? "on" : ""}`} /></div>
+                <div className="track-labels"><span>Requirement known</span><span>Record on this implement</span><span>Meets requirement</span></div>
+              </div>
+              <p className="small" style={{ margin: 0 }}>{e.detail}</p>
+              <div className="next"><b>What to do</b>{e.next_step}</div>
+            </article>
+          );
+        })}
         <p className="small">
           Totals (counts only, not a score): {r.summary_counts.measured_gap} measured gap · {r.summary_counts.implement_practice_gap} implement-practice gap · {r.summary_counts.unknown} unknown · {r.summary_counts.demonstrated} demonstrated
         </p>
@@ -131,8 +138,9 @@ export default function AssessmentPage() {
         </Card>
       )}
 
-      <div className="row">
-        <button className="btn btn-primary" onClick={makePlan} disabled={busy || a.stale}>{busy ? "Working…" : "Generate preparation plan"}</button>
+      <div className="sticky-actions">
+        {ai?.provider === "mock" && <span className="small muted" style={{ alignSelf: "center" }}>Using the mock planner. <Link href="/settings">Add an AI key</Link> for real AI plans.</span>}
+        <button className="btn btn-primary btn-lg" onClick={makePlan} disabled={busy || a.stale}>{busy ? "Working…" : "Generate preparation plan"}</button>
         <button className="btn" onClick={rerun} disabled={busy}>Re-run assessment with current data</button>
       </div>
     </>

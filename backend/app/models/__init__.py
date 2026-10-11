@@ -244,3 +244,18 @@ class TrainingLog(Base):
     effort_rpe: Mapped[float | None] = mapped_column(Float)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AiSetting(Base):
+    """Per-owner AI provider settings entered in the app. The API key is stored encrypted and never returned."""
+
+    __tablename__ = "ai_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String(24))  # mock | claude | openai_compatible
+    base_url: Mapped[str | None] = mapped_column(String(300))
+    model: Mapped[str | None] = mapped_column(String(120))
+    encrypted_key: Mapped[str | None] = mapped_column(Text)
+    key_last4: Mapped[str | None] = mapped_column(String(4))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

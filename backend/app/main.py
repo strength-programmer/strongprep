@@ -15,6 +15,8 @@ def check_startup(settings=None):
         raise RuntimeError("Demo mode may only use SQLite. Refusing to point the demo identity at a live database.")
     if not s.is_demo and not s.supabase_url:
         raise RuntimeError("APP_MODE=live requires SUPABASE_URL (and a database URL).")
+    if not s.is_demo and not s.app_secret_key:
+        raise RuntimeError("APP_MODE=live requires APP_SECRET_KEY (a Fernet key) to encrypt stored API keys.")
 
 
 @asynccontextmanager

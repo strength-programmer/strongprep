@@ -19,8 +19,18 @@ export default function ProfilePage() {
 
   return (
     <>
-      <h1>Profile</h1>
-      <p className="muted">Everything is stored locally in the demo. Weights are in kg, distances in metres, times in seconds.</p>
+      <div className="page-head">
+        <h1>Profile</h1>
+        <p>Your gap report and plan are built from these three things. Everything is stored locally in the demo. Weights are in kg, distances in metres, times in seconds.</p>
+      </div>
+      <nav className="section-nav" aria-label="Profile sections">
+        <a href="#athlete">1 · Athlete</a><a href="#equipment">2 · Equipment</a><a href="#records">3 · Performance records</a>
+      </nav>
+      <ul className="checklist">
+        {Object.entries(prof.data.completeness.checks).filter(([k]) => k !== "target_competition").map(([k, ok]) => (
+          <li key={k} className={ok ? "ok" : ""}>{({ body_weight_kg: "Body weight", age: "Age", division_category: "Division category", experience_level: "Experience", availability: "Training days and session length", equipment: "Equipment access", performance_records: "Performance records" } as Record<string, string>)[k] ?? k}</li>
+        ))}
+      </ul>
       <AthleteForm refData={ref.data} initial={prof.data.profile} completeness={prof.data.completeness.percent} onSaved={prof.reload} />
       <EquipmentForm refData={ref.data} initial={equip.data} onSaved={() => { equip.reload(); prof.reload(); }} />
       <PerformanceSection refData={ref.data} records={recs.data} onChanged={() => { recs.reload(); prof.reload(); }} />
@@ -69,7 +79,7 @@ function AthleteForm({ refData, initial, completeness, onSaved }: { refData: Ref
   };
 
   return (
-    <Card title={`Athlete (${completeness}% complete)`}>
+    <Card title={<span id="athlete">{`Athlete (${completeness}% complete)`}</span>}>
       <form onSubmit={submit} className="stack">
         <div className="row">
           <Field label="Display name (optional)"><input value={f.display_name} onChange={(e) => set("display_name", e.target.value)} /></Field>
@@ -141,7 +151,7 @@ function EquipmentForm({ refData, initial, onSaved }: { refData: Ref; initial: a
   };
 
   return (
-    <Card title="Equipment access">
+    <Card title={<span id="equipment">Equipment access</span>}>
       <p className="small muted">Leave “Not recorded” if you are unsure. “Occasional” means you have agreed access (e.g. a specialist gym) that the plan may schedule deliberately. “None” means plans will never require it.</p>
       <form onSubmit={submit} className="stack">
         <div className="table-wrap">
@@ -191,7 +201,7 @@ function PerformanceSection({ refData, records, onChanged }: { refData: Ref; rec
   const remove = async (id: number) => { await api(`/performance-records/${id}`, { method: "DELETE" }); onChanged(); };
 
   return (
-    <Card title="Performance records">
+    <Card title={<span id="records">Performance records</span>}>
       <p className="small muted">A one-rep max, a timed set and a competition result are separate records. Each record keeps its implement/task and whether it was self-reported, verified, or an official result. Records are never converted between implements.</p>
       <form onSubmit={submit} className="stack">
         <div className="row">

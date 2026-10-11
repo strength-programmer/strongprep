@@ -5,19 +5,20 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import inspect, or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.auth import current_owner, optional_owner
+from app.api.auth import current_owner, optional_owner, soft_owner
 from app.config import Settings, get_settings
 from app.data import reference as ref
 from app.db import get_db
-from app.integrations.ai import ai_status
+from app.integrations.ai import ProviderUnavailable, check_connection
 from app.integrations.search_extract import integration_status
-from app.models import (Assessment, AthleteProfile, Competition, CompetitionDivision, EquipmentAccess, EventSpecification,
+from app.models import (AiSetting, Assessment, AthleteProfile, Competition, CompetitionDivision, EquipmentAccess, EventSpecification,
                         EventSpecRevision, ExerciseTemplate, HistoricalResult, PerformanceRecord, PreparationPlan,
                         SourceEvidence, TrainingLog)
-from app.schemas import (AssessmentIn, CompetitionIn, EquipmentItem, EventIn, PerformanceIn, PlanIn, ProfileIn, TargetIn,
+from app.schemas import (AiSettingsIn, AssessmentIn, CompetitionIn, EquipmentItem, EventIn, PerformanceIn, PlanIn, ProfileIn, TargetIn,
                          TrainingLogIn)
 from app.services import assessment as assess_svc
-from app.services import planning
+from app.services import ai_settings as ai_svc
+from app.services import planning, secrets
 
 router = APIRouter()
 
@@ -32,8 +33,9 @@ def now():
 
 # ---------------------------------------------------------------- status / reference
 @router.get("/status")
-def status(settings: Settings = Depends(get_settings)):
-    return {"mode": settings.app_mode, "ai": ai_status(settings), "integrations": integration_status(),
+def status(settings: Settings = Depends(get_settings), owner: str | None = Depends(soft_owner), db: Session = Depends(get_db)):
+    row = db.query(AiSetting).filter_by(owner_id=owner).first() if owner else None
+    return {"mode": settings.app_mode, "ai": ai_svc.public_view(settings, row), "integrations": integration_status(),
             "demo_notice": "Local demo mode: fictional competitions, synthetic benchmarks, unreviewed templates, mock AI."
             if settings.is_demo else None}
 
@@ -351,9 +353,12 @@ def create_plan(body: PlanIn, owner: str = Depends(current_owner), db: Session =
     templates = db.query(ExerciseTemplate).all()
     try:
         ctx = planning.build_context(profile, equipment, templates, a.result, comp, date.today())
-        plan, provider = planning.generate_validated_plan(ctx, settings)
+        plan, provider = planning.generate_validated_plan(
+            ctx, ai_svc.effective_settings(settings, db.query(AiSetting).filter_by(owner_id=owner).first()))
     except planning.PlanError as exc:
         raise HTTPException(exc.status, detail={"message": str(exc), "errors": exc.errors})
+    except ProviderUnavailable as exc:
+        raise HTTPException(503, detail={"message": str(exc), "errors": []})
     used = {x["key"]: x["template_version"] for x in ctx["templates"]}
     version = db.query(PreparationPlan).filter_by(owner_id=owner, assessment_id=a.id).count() + 1
     p = PreparationPlan(owner_id=owner, assessment_id=a.id, version=version, provider=provider,
@@ -464,6 +469,7 @@ def delete_my_data(owner: str = Depends(current_owner), db: Session = Depends(ge
     db.query(Assessment).filter_by(owner_id=owner).delete()
     db.query(EquipmentAccess).filter_by(owner_id=owner).delete()
     db.query(AthleteProfile).filter_by(owner_id=owner).delete()
+    db.query(AiSetting).filter_by(owner_id=owner).delete()
     for c in db.query(Competition).filter_by(owner_id=owner).all():
         for v in c.divisions:
             for e in v.events:
@@ -472,3 +478,63 @@ def delete_my_data(owner: str = Depends(current_owner), db: Session = Depends(ge
         db.query(SourceEvidence).filter_by(entity_type="competition", entity_id=c.id).delete()
         db.delete(c)
     db.commit()
+
+
+# ---------------------------------------------------------------- AI settings (key entered in the app)
+def _ai_row(db, owner):
+    return db.query(AiSetting).filter_by(owner_id=owner).first()
+
+
+@router.get("/ai-settings")
+def get_ai_settings(owner: str = Depends(current_owner), db: Session = Depends(get_db), settings: Settings = Depends(get_settings)):
+    return ai_svc.public_view(settings, _ai_row(db, owner))
+
+
+@router.put("/ai-settings")
+def put_ai_settings(body: AiSettingsIn, owner: str = Depends(current_owner), db: Session = Depends(get_db),
+                    settings: Settings = Depends(get_settings)):
+    row = _ai_row(db, owner)
+    try:
+        if body.provider == "mock":
+            fields = {"provider": "mock", "base_url": None, "model": None, "encrypted_key": None, "key_last4": None}
+        else:
+            model = (body.model or "").strip()
+            if not model:
+                raise ai_svc.SettingsError("A model name is required.")
+            base_url = ai_svc.validate_base_url(body.base_url or "", settings.is_demo) if body.provider == "openai_compatible" else None
+            if body.api_key:
+                key = ai_svc.clean_key(body.api_key)
+                enc, last4 = secrets.encrypt(settings, key), key[-4:]
+            elif row and row.provider == body.provider and row.encrypted_key:
+                enc, last4 = row.encrypted_key, row.key_last4
+            else:
+                raise ai_svc.SettingsError("An API key is required for this provider.")
+            fields = {"provider": body.provider, "base_url": base_url, "model": model, "encrypted_key": enc, "key_last4": last4}
+    except ai_svc.SettingsError as exc:
+        raise HTTPException(422, detail=str(exc))
+    except secrets.SecretsUnavailable as exc:
+        raise HTTPException(503, detail=str(exc))
+    if row is None:
+        row = AiSetting(owner_id=owner, **fields)
+        db.add(row)
+    else:
+        for k, v in fields.items():
+            setattr(row, k, v)
+    db.commit()
+    return ai_svc.public_view(settings, row)
+
+
+@router.delete("/ai-settings", status_code=204)
+def delete_ai_settings(owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+    db.query(AiSetting).filter_by(owner_id=owner).delete()
+    db.commit()
+
+
+@router.post("/ai-settings/test")
+def test_ai_settings(owner: str = Depends(current_owner), db: Session = Depends(get_db), settings: Settings = Depends(get_settings)):
+    try:
+        eff = ai_svc.effective_settings(settings, _ai_row(db, owner))
+    except ProviderUnavailable as exc:
+        return {"ok": False, "message": str(exc)}
+    ok, message = check_connection(eff)
+    return {"ok": ok, "message": message}

@@ -1,4 +1,4 @@
-﻿from functools import lru_cache
+from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     ai_provider: str = "mock"  # mock | claude
     anthropic_api_key: str = ""
     claude_model: str = ""
+
+    # Any OpenAI-compatible chat endpoint (e.g. Qwen via DashScope, or a proxy). AI_PROVIDER=openai_compatible
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+
+    # Fernet key used to encrypt API keys entered in the app. Required in live mode; demo auto-creates a local file.
+    app_secret_key: str = ""
 
     tavily_api_key: str = ""
     firecrawl_api_key: str = ""

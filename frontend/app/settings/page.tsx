@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api, API_BASE, ApiError, useApi } from "@/lib/api";
+import AiSettingsCard from "@/components/AiSettingsCard";
 import { Badge, Card, ErrorBox, Loading } from "@/components/ui";
 
 export default function Settings() {
@@ -8,8 +9,9 @@ export default function Settings() {
   const [err, setErr] = useState<ApiError | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  if (loading) return <Loading />;
-  if (error) return <ErrorBox error={error} onRetry={reload} />;
+  if (loading && !data) return <Loading />; // only on first load: reloads must not unmount the cards below
+  if (error && !data) return <ErrorBox error={error} onRetry={reload} />;
+  if (!data) return null;
 
   const exportData = async () => {
     setErr(null);
@@ -29,13 +31,14 @@ export default function Settings() {
 
   return (
     <>
-      <h1>Settings and diagnostics</h1>
-      <Card title="Integration status">
+      <h1>Settings</h1>
+      <AiSettingsCard onChanged={reload} />
+      <Card title="Diagnostics">
         <table>
           <tbody>
             <tr><th>Mode</th><td><Badge tone={data.mode === "demo" ? "demo" : "info"}>{data.mode}</Badge></td></tr>
             <tr><th>Backend</th><td>{API_BASE}</td></tr>
-            <tr><th>AI provider</th><td>{data.ai.provider} — {data.ai.available ? <Badge tone="good">available</Badge> : <Badge tone="bad">unavailable</Badge>} <span className="small muted">{data.ai.detail ?? data.ai.model ?? ""}</span></td></tr>
+            <tr><th>AI provider</th><td>{data.ai.provider} — {data.ai.available ? <Badge tone="good">available</Badge> : <Badge tone="bad">unavailable</Badge>} <span className="small muted">{data.ai.detail ?? data.ai.model ?? ""} (source: {data.ai.source})</span></td></tr>
             <tr><th>Tavily search</th><td>mock only (live adapter is a later milestone){data.integrations.tavily.configured && " · key present but unused"}</td></tr>
             <tr><th>Firecrawl extraction</th><td>mock only (live adapter is a later milestone){data.integrations.firecrawl.configured && " · key present but unused"}</td></tr>
           </tbody>

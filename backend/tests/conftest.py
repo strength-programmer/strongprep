@@ -4,6 +4,7 @@ import time
 
 import jwt
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
@@ -16,6 +17,7 @@ from app.main import create_app  # noqa: E402
 
 JWT_SECRET = "test-secret-with-enough-length-for-hs256-0123456789"
 SUPABASE_URL = "https://example-project.supabase.co"
+TEST_FERNET = Fernet.generate_key().decode()
 
 
 def make_client(db_path, settings: Settings, client_addr=("127.0.0.1", 50000)):
@@ -38,7 +40,7 @@ def make_client(db_path, settings: Settings, client_addr=("127.0.0.1", 50000)):
 
 @pytest.fixture
 def demo(tmp_path):
-    s = Settings(app_mode="demo", database_url="sqlite:///x.db", ai_provider="mock")
+    s = Settings(app_mode="demo", database_url="sqlite:///x.db", ai_provider="mock", app_secret_key=TEST_FERNET)
     client, Session, engine = make_client(tmp_path / "demo.db", s)
     with Session() as db:
         seed_templates(db)
@@ -57,7 +59,7 @@ def demo_athlete(demo):
 
 @pytest.fixture
 def live(tmp_path):
-    s = Settings(app_mode="live", database_url="sqlite:///x.db", supabase_url=SUPABASE_URL, supabase_jwt_secret=JWT_SECRET)
+    s = Settings(app_mode="live", database_url="sqlite:///x.db", supabase_url=SUPABASE_URL, supabase_jwt_secret=JWT_SECRET, app_secret_key=TEST_FERNET)
     client, Session, engine = make_client(tmp_path / "live.db", s)
     with Session() as db:
         seed_templates(db)

@@ -15,10 +15,13 @@ export default function Competitions() {
 
   return (
     <>
-      <h1>Competitions</h1>
-      <p className="muted">The seeded catalog is entirely fictional. Add your own competition manually to work with real requirements.</p>
-      <Card title="Filter">
-        <form className="row" onSubmit={(e) => { e.preventDefault(); setApplied(filters); }}>
+      <div className="page-head">
+        <h1>Competitions</h1>
+        <p>Pick the show you are preparing for. The seeded catalog is entirely fictional; add your own competition below to work with real requirements.</p>
+      </div>
+      <details open={Boolean(qs)}>
+        <summary>Filter competitions{qs ? " (active)" : ""}</summary>
+        <form className="row" style={{ marginTop: ".6rem" }} onSubmit={(e) => { e.preventDefault(); setApplied(filters); }}>
           <Field label="Name contains"><input value={filters.q} onChange={(e) => set("q", e.target.value)} /></Field>
           <Field label="City"><input value={filters.city} onChange={(e) => set("city", e.target.value)} /></Field>
           <Field label="From"><input type="date" value={filters.date_from} onChange={(e) => set("date_from", e.target.value)} /></Field>
@@ -29,34 +32,41 @@ export default function Competitions() {
             </select>
           </Field>
           <button className="btn btn-primary">Apply</button>
+          <button type="button" className="btn" onClick={() => { const empty = { q: "", city: "", date_from: "", date_to: "", status: "" }; setFilters(empty); setApplied(empty); }}>Clear</button>
         </form>
         <p className="small muted">Distance is not calculated: location filtering is by city text only, and travel time is not estimated.</p>
-      </Card>
+      </details>
 
       {loading ? <Loading what="Loading competitions" /> : error ? <ErrorBox error={error} onRetry={reload} /> : !data || data.length === 0 ? (
         <Empty title="No competitions match these filters">Clear the filters or add one manually below.</Empty>
       ) : (
-        <div className="table-wrap card">
-          <table>
-            <thead><tr><th>Competition</th><th>Date</th><th>Location</th><th>Status</th><th>Divisions</th><th>Entry fee</th></tr></thead>
-            <tbody>
-              {data.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <Link href={`/competitions/${c.id}`}><strong>{c.title}</strong></Link><br />
+        <div className="list" style={{ marginTop: "1rem" }}>
+          {[...data].sort((a, b) => (a.status === "upcoming" ? 0 : 1) - (b.status === "upcoming" ? 0 : 1) || a.start_date.localeCompare(b.start_date)).map((c) => {
+            const [y, m, dd] = c.start_date.split("-").map(Number);
+            const dt = new Date(y, m - 1, dd);
+            const days = Math.round((dt.getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000);
+            return (
+              <article key={c.id} className="comp" style={c.status !== "upcoming" ? { opacity: 0.75 } : undefined}>
+                <div className="datebox" aria-hidden>
+                  <span className="d">{dd}</span>
+                  <span className="m">{dt.toLocaleString(undefined, { month: "short" })} {y}</span>
+                </div>
+                <div>
+                  <Link href={`/competitions/${c.id}`} className="title">{c.title}</Link>
+                  <div className="small muted">{[c.city, c.country].filter(Boolean).join(", ") || "Location unknown"} · {c.divisions.map((d: any) => d.name).join(" · ")}</div>
+                  <div>
+                    <CompStatusBadge status={c.status} />
+                    {c.status === "upcoming" && days >= 0 && <Badge tone="info">{days} days away</Badge>}
                     {c.is_demo && <DemoBadge label={c.demo_label} />}
                     {!c.is_shared_catalog && <Badge tone="info">Your entry</Badge>}
-                    {c.verification_status !== "verified" && <Badge tone="warn">{c.verification_status === "fixture" ? "Fixture" : "Unverified"}</Badge>}
-                  </td>
-                  <td>{fmtDate(c.start_date)}</td>
-                  <td>{[c.city, c.country].filter(Boolean).join(", ") || "—"}</td>
-                  <td><CompStatusBadge status={c.status} /></td>
-                  <td>{c.divisions.map((d: any) => d.name).join("; ")}</td>
-                  <td>{c.entry_fee != null ? `${c.entry_fee} ${c.fee_currency ?? ""}` : "Unknown"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    {c.verification_status !== "verified" && <Badge tone="warn">{c.verification_status === "fixture" ? "Fixture data" : "Unverified"}</Badge>}
+                    <span className="small muted"> Fee: {c.entry_fee != null ? `${c.entry_fee} ${c.fee_currency ?? ""}` : "unknown"}</span>
+                  </div>
+                </div>
+                <Link href={`/competitions/${c.id}`} className="btn btn-primary">View events</Link>
+              </article>
+            );
+          })}
         </div>
       )}
       <ManualEntry onCreated={reload} />

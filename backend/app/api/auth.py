@@ -64,3 +64,11 @@ def optional_owner(request: Request, settings: Settings = Depends(get_settings))
     if _bearer(request) is None:
         return None
     return current_owner(request, settings)
+
+
+def soft_owner(request: Request, settings: Settings = Depends(get_settings)) -> str | None:
+    """Like optional_owner, but a bad/expired token yields None instead of an error (used by /status)."""
+    try:
+        return optional_owner(request, settings)
+    except HTTPException:
+        return None

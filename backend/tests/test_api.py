@@ -360,3 +360,65 @@ def test_status_is_clear_about_demo(demo):
     st = client.get("/status").json()
     assert st["mode"] == "demo" and st["ai"]["provider"] == "mock" and "fictional" in st["demo_notice"].lower()
     assert st["integrations"]["tavily"]["live_adapter"] is False
+
+
+# ------------------------------------------------------------------ OpenAI-compatible (Qwen) provider
+def _plan_ctx(demo_athlete):
+    client, Session, *_ = demo_athlete
+    *_, plan = run_journey(client)
+    with Session() as db:
+        from app.models import Assessment, Competition, AthleteProfile, EquipmentAccess
+        a = db.get(Assessment, plan["assessment_id"])
+        return planning.build_context(db.query(AthleteProfile).first(), db.query(EquipmentAccess).all(),
+                                      db.query(ExerciseTemplate).all(), a.result, db.get(Competition, a.competition_id), date.today())
+
+
+def test_openai_compatible_unavailable_without_config_and_never_leaks_key():
+    from app.integrations.ai import OpenAICompatiblePlanProvider, ai_status
+    s = Settings(ai_provider="openai_compatible", llm_api_key="sk-secret")
+    with pytest.raises(ProviderUnavailable) as e:
+        OpenAICompatiblePlanProvider(s)
+    assert "LLM_BASE_URL" in str(e.value) and "sk-secret" not in str(e.value)
+    st = ai_status(s)
+    assert st["available"] is False and "sk-secret" not in json.dumps(st)
+
+
+def test_openai_compatible_adapter_validates_output_and_handles_errors(demo_athlete):
+    import httpx
+    from app.integrations.ai import OpenAICompatiblePlanProvider
+    ctx = _plan_ctx(demo_athlete)
+    s = Settings(ai_provider="openai_compatible", llm_base_url="https://llm.example/v1", llm_api_key="sk-secret", llm_model="qwen-test")
+    good = MockPlanProvider().generate_plan(ctx)
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["url"], seen["auth"], seen["body"] = str(request.url), request.headers["authorization"], json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "```json\n" + json.dumps(good) + "\n```"}}]})
+
+    prov = OpenAICompatiblePlanProvider(s, transport=httpx.MockTransport(handler))
+    plan, name = planning.generate_validated_plan(ctx, s, provider=prov)
+    assert name == "openai_compatible" and "qwen-test" in plan["ai_label"]
+    assert seen["url"] == "https://llm.example/v1/chat/completions" and seen["auth"] == "Bearer sk-secret"
+    assert seen["body"]["model"] == "qwen-test" and "sk-secret" not in json.dumps(seen["body"])
+
+    bad = dict(good, weeks=good["weeks"][:-1])
+    p2 = OpenAICompatiblePlanProvider(s, transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(bad)}}]})))
+    with pytest.raises(planning.PlanError) as ei:
+        planning.generate_validated_plan(ctx, s, provider=p2)
+    assert ei.value.status == 422
+
+    for resp, status, text in [(httpx.Response(401, json={}), 502, "rejected the credentials"),
+                               (httpx.Response(500, text="x"), 502, "HTTP 500"),
+                               (httpx.Response(200, json={"nope": 1}), 502, "Unexpected response"),
+                               (httpx.Response(200, json={"choices": [{"message": {"content": "no json"}}]}), 502, "JSON")]:
+        pr = OpenAICompatiblePlanProvider(s, transport=httpx.MockTransport(lambda r, resp=resp: resp))
+        with pytest.raises(planning.PlanError) as ei:
+            planning.generate_validated_plan(ctx, s, provider=pr)
+        assert ei.value.status == status and text in str(ei.value) and "sk-secret" not in str(ei.value)
+
+    def boom(request):
+        raise httpx.ConnectTimeout("t")
+    pt = OpenAICompatiblePlanProvider(s, transport=httpx.MockTransport(boom))
+    with pytest.raises(planning.PlanError) as ei:
+        planning.generate_validated_plan(ctx, s, provider=pt)
+    assert ei.value.status == 502 and "ConnectTimeout" in str(ei.value)

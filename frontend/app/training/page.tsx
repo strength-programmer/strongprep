@@ -25,14 +25,14 @@ function Training() {
   const err = logs.error || plans.error || ref.error;
   if (err) return <ErrorBox error={err} onRetry={() => { logs.reload(); plans.reload(); ref.reload(); }} />;
 
-  const sessions: { id: string; name: string }[] = detail.data ? detail.data.content.weeks.flatMap((w: any) => w.sessions.map((s: any) => ({ id: s.id, name: s.name }))) : [];
+  const sessions: { id: string; name: string; exercises: any[] }[] = detail.data ? detail.data.content.weeks.flatMap((w: any) => w.sessions.map((s: any) => ({ id: s.id, name: s.name, exercises: s.exercises }))) : [];
 
   return (
     <>
-      <h1>Training</h1>
+      <div className="page-head"><h1>Training</h1></div>
       <p className="muted">Log sessions and any new performance. New records feed the next gap report, so re-run the assessment afterward.</p>
       <LogForm
-        key={`${planId}-${params.get("session") ?? ""}`}
+        key={`${planId}-${params.get("session") ?? ""}-${sessions.length}`}
         tasks={ref.data.tasks} plans={plans.data ?? []} planId={planId} setPlanId={setPlanId} sessions={sessions}
         initialSession={params.get("session") ?? ""} onSaved={logs.reload}
       />
@@ -62,11 +62,21 @@ function Training() {
 function LogForm({ tasks, plans, planId, setPlanId, sessions, initialSession, onSaved }: any) {
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState({ session: initialSession, date: today, completed: true, rpe: "", notes: "" });
-  const [exs, setExs] = useState([{ name: "", sets: "", reps: "", load: "" }]);
+  type Row = { name: string; sets: string; reps: string; load: string };
+  const [exs, setExs] = useState<Row[]>((): Row[] => {
+    const sess = sessions.find((x: any) => x.id === initialSession);
+    return sess ? sess.exercises.map((x: any) => ({ name: x.name, sets: String(x.sets), reps: /^\d+$/.test(String(x.reps)) ? String(x.reps) : "", load: "" })) : [{ name: "", sets: "", reps: "", load: "" }];
+  });
   const [perfs, setPerfs] = useState<any[]>([]);
   const [err, setErr] = useState<ApiError | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const pickSession = (id: string) => {
+    setF((v) => ({ ...v, session: id }));
+    const sess = sessions.find((x: any) => x.id === id);
+    if (sess) setExs(sess.exercises.map((x: any) => ({ name: x.name, sets: String(x.sets), reps: String(x.reps).match(/^\d+$/) ? String(x.reps) : "", load: "" })));
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setErr(null); setOk(null);
@@ -95,7 +105,7 @@ function LogForm({ tasks, plans, planId, setPlanId, sessions, initialSession, on
             </select>
           </Field>
           <Field label="Planned session">
-            <select value={f.session} onChange={(e) => setF({ ...f, session: e.target.value })} disabled={!planId}>
+            <select value={f.session} onChange={(e) => pickSession(e.target.value)} disabled={!planId}>
               <option value="">Unplanned</option>
               {sessions.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
