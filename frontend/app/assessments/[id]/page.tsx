@@ -101,7 +101,7 @@ export default function AssessmentPage() {
             <summary>Equipment notes</summary>
             <ul>
               {r.events.filter((e: any) => e.equipment.flags.length).map((e: any) => (
-                <li key={e.event_id}><strong>{e.event_name}</strong>: access {e.equipment.access}; {e.equipment.flags.map((f: string) => f.replace(/_/g, " ")).join(", ")}</li>
+                <li key={e.event_id}><strong>{e.event_name}</strong>: access {e.equipment.access}; {e.equipment.flags.map((f: string) => f.replace(/_/g, " ")).join(", ")}{e.equipment.note && <> — {e.equipment.note}</>}</li>
               ))}
             </ul>
           </details>

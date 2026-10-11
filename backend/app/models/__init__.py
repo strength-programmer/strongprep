@@ -1,6 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -42,6 +43,8 @@ class EquipmentAccess(Base):
     implement: Mapped[str] = mapped_column(String(40))
     access: Mapped[str] = mapped_column(String(12))  # regular | occasional | none
     max_load_kg: Mapped[float | None] = mapped_column(Float)
+    # True when max_load_kg is for ONE hand/handle (e.g. "50 kg dumbbells"); False when it is the total load
+    limit_is_per_hand: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
     carry_space_m: Mapped[float | None] = mapped_column(Float)
     notes: Mapped[str | None] = mapped_column(String(300))
 

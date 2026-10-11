@@ -44,6 +44,7 @@ class EquipmentItem(BaseModel):
     implement: str
     access: Literal["regular", "occasional", "none"]
     max_load_kg: float | None = Field(None, ge=0, le=1000)
+    limit_is_per_hand: bool = False
     carry_space_m: float | None = Field(None, ge=0, le=1000)
     notes: str | None = Field(None, max_length=300)
 

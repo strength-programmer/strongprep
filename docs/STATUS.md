@@ -1,10 +1,10 @@
 # Implementation checkpoint
 
 Updated: October 11, 2026.
-Milestones 00-05 and a synthetic-data version of 06 are implemented. Finish-the-project plan: A1-A3 done (frontend localhost bind; report and plan staleness). Next: **05b contract alignment and evidence staleness** (see ROADMAP).
+Milestones 00-05 and a synthetic-data version of 06 are implemented. Finish-the-project plan: A1-A4 done (frontend localhost bind; report and plan staleness; per-hand equipment limits). Next: **05b contract alignment and evidence staleness** (see ROADMAP).
 
 ## Implemented and verified
-Verified by running: backend `pytest` (70 passing), frontend `vitest` (4), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
+Verified by running: backend `pytest` (80 passing), frontend `vitest` (4), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
 
 | Area | Where | Notes |
 | --- | --- | --- |
@@ -26,12 +26,12 @@ Verified by running: backend `pytest` (70 passing), frontend `vitest` (4), `tsc 
 3. Competition times are dates only (no time zone). No `PATCH /competitions/{id}`; only events are editable, and only private ones.
 4. Plan "activation" is a plain save; there is no single-active-plan rule.
 5. UI redesigned (sidebar/bottom-tab shell, next-step hero + journey tracker, event cards with a 3-fact evidence tracker, plan week tabs, pre-filled training log) and screenshot-checked in headless Chromium, but form interactions were not click-tested. Claude adapter never run against the real API. Supabase never tried live. No RLS policies.
-6. Equipment max load is compared to event load without per-hand/total conversion.
 
 ## Decisions
 - Task keys encode the implement (`log_clean_press` vs `press_barbell_strict`), so comparability is exact-key plus per-hand match; same-family records are "related" only.
 - Records older than 365 days are excluded from comparison (shown with a note).
 - Reps events need a timed set (>= 2 reps, within the time limit) at or above the event load to count as demonstrated; a single is "unknown" with the load ratio shown as context.
+- Equipment limits are compared on a total-load basis: a per-hand figure is doubled, and the report states exactly what was compared (`equipment.note`). Existing rows default to 'total'; set dumbbells/kettlebells/handles to 'per hand' in Profile.
 - Plan estimates: 5 min warm-up + 3 min per set; no absolute loads are prescribed.
 
 ## Next task

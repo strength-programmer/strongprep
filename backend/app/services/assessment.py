@@ -83,20 +83,31 @@ def _rec_view(r, comparable: bool, note: str = "") -> dict:
     }
 
 
-def _equipment_flags(ev, equipment_by_impl: dict) -> tuple[list[str], str]:
+def _equipment_flags(ev, equipment_by_impl: dict) -> tuple[list[str], str, str | None]:
+    """Returns (flags, access, note). Load limits are compared on a common total-load basis: a per-hand figure
+    is doubled (two hands/handles). The note spells out exactly what was compared."""
     impl = TASKS.get(ev.task_key, {}).get("implement")
     eq = equipment_by_impl.get(impl)
-    flags = []
+    flags: list[str] = []
     if eq is None:
         flags.append("access_not_recorded")
-        return flags, "unrecorded"
+        return flags, "unrecorded", None
     if eq.access == "none":
         flags.append("no_access")
     elif eq.access == "occasional":
         flags.append("occasional_access")
-    if eq.access != "none" and eq.max_load_kg is not None and ev.load_kg is not None and eq.max_load_kg < ev.load_kg:
-        flags.append("load_limit_below_event")
-    return flags, eq.access
+    note = None
+    if eq.access != "none" and eq.max_load_kg is not None and ev.load_kg is not None:
+        limit_per_hand = bool(getattr(eq, "limit_is_per_hand", False))
+        event_total = ev.load_kg * 2 if ev.load_per_hand else ev.load_kg
+        limit_total = eq.max_load_kg * 2 if limit_per_hand else eq.max_load_kg
+        event_txt = f"{ev.load_kg:g} kg {'per hand' if ev.load_per_hand else 'total'}"
+        limit_txt = f"{eq.max_load_kg:g} kg {'per hand' if limit_per_hand else 'total'}"
+        basis = "" if ev.load_per_hand == limit_per_hand else f" (compared as totals: {event_total:g} kg vs {limit_total:g} kg)"
+        note = f"Event load {event_txt}; your recorded limit {limit_txt}{basis}."
+        if limit_total < event_total:
+            flags.append("load_limit_below_event")
+    return flags, eq.access, note
 
 
 def _ratio(num, den):
@@ -122,14 +133,14 @@ def assess_event(ev, records: list, today: date, equipment_by_impl: dict) -> dic
             related.append(r)
             evidence.append(_rec_view(r, False, "Related general strength only; different implement/task. Not equivalent."))
 
-    flags, access = _equipment_flags(ev, equipment_by_impl)
+    flags, access, limit_note = _equipment_flags(ev, equipment_by_impl)
     out = {
         "event_id": ev.id, "event_name": ev.name, "task_key": ev.task_key, "scoring_type": ev.scoring_type,
         "spec_version": ev.version,
         "requirement": {"load_kg": ev.load_kg, "load_per_hand": ev.load_per_hand, "time_limit_s": ev.time_limit_s,
                         "distance_m": ev.distance_m, "original_load_text": ev.original_load_text,
                         "original_unit": ev.original_unit},
-        "equipment": {"access": access, "flags": flags},
+        "equipment": {"access": access, "flags": flags, "note": limit_note},
         "load_ratio": None, "basis": "unavailable", "status": None, "detail": "", "next_step": "",
     }
     status, detail, basis, ratio = _evaluate(ev, comparable, related, evidence, flags)

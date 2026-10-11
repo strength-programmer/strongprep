@@ -75,7 +75,7 @@ def test_old_records_are_excluded():
 
 def test_per_hand_vs_total_mismatch_not_comparable():
     e = ev(task_key="farmers_carry", scoring_type="time", load_kg=80, load_per_hand=True, distance_m=20, time_limit_s=45)
-    r = run(e, [rec("farmers_carry", load=100, dist=20, t=20, per_hand=False)], [eq("farmers_handles", "regular", 120)])
+    r = run(e, [rec("farmers_carry", load=100, dist=20, t=20, per_hand=False)], [eqp(120, True)])  # 120 kg per hand: limit is not the issue here
     assert r["status"] == "unknown"
     assert any("per-hand" in x["note"] for x in r["evidence"])
 
@@ -197,3 +197,41 @@ def test_dedupe_keeps_best_per_athlete():
     a = NS(athlete_key="x", competition_name="c1", result_date=date(2026, 1, 1), result_value=100.0)
     b = NS(athlete_key="x", competition_name="c2", result_date=date(2026, 2, 1), result_value=120.0)
     assert [r.result_value for r in dedupe_unique_athletes([a, a, b], True)] == [120.0]
+
+
+# ---- per-hand vs total equipment limits (step A4)
+def eqp(max_load, per_hand, access="regular"):
+    return NS(implement="farmers_handles", access=access, max_load_kg=max_load, limit_is_per_hand=per_hand)
+
+
+def carry_event(load, per_hand):
+    return ev(task_key="farmers_carry", scoring_type="time", load_kg=load, load_per_hand=per_hand, distance_m=20, time_limit_s=45)
+
+
+import pytest as _pytest
+
+
+@_pytest.mark.parametrize("event_load,event_per_hand,limit,limit_per_hand,flagged", [
+    (80, True, 100, False, True),     # 160 total needed, only 100 total available
+    (80, True, 100, True, False),     # 160 total needed, 200 total available
+    (160, False, 100, True, False),   # 160 total needed, 200 total available
+    (160, False, 100, False, True),   # 160 total needed, 100 total available
+    (80, True, 80, True, False),      # exactly at the limit is fine
+    (80, True, 79, True, True),       # just under
+    (160, False, 160, False, False),  # exactly at the limit, totals
+])
+def test_load_limit_compares_like_with_like(event_load, event_per_hand, limit, limit_per_hand, flagged):
+    r = run(carry_event(event_load, event_per_hand), [], [eqp(limit, limit_per_hand)])
+    assert ("load_limit_below_event" in r["equipment"]["flags"]) is flagged
+    assert r["equipment"]["note"] and "Event load" in r["equipment"]["note"]
+    if event_per_hand != limit_per_hand:
+        assert "compared as totals" in r["equipment"]["note"]  # the conversion is never silent
+    else:
+        assert "compared as totals" not in r["equipment"]["note"]
+
+
+def test_limit_note_absent_without_a_limit_or_access_and_old_rows_default_to_total():
+    assert run(carry_event(80, True), [], [eqp(None, False)])["equipment"]["note"] is None
+    assert run(carry_event(80, True), [], [eqp(100, False, access="none")])["equipment"]["note"] is None
+    legacy = NS(implement="farmers_handles", access="regular", max_load_kg=100)  # no limit_is_per_hand attribute
+    assert "load_limit_below_event" in run(carry_event(80, True), [], [legacy])["equipment"]["flags"]

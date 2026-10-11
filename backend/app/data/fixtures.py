@@ -162,7 +162,8 @@ def seed_demo_athlete(db, owner_id: str, today: date | None = None):
                                 ("rack_bench", "regular", None, None), ("kettlebell", "regular", 32, None),
                                 ("log", "occasional", 80, "Specialist gym about once a month"),
                                 ("farmers_handles", "none", None, None), ("sandbag", "none", None, None)]:
-        db.add(EquipmentAccess(owner_id=owner_id, implement=impl, access=acc, max_load_kg=mx, notes=note))
+        db.add(EquipmentAccess(owner_id=owner_id, implement=impl, access=acc, max_load_kg=mx, notes=note,
+                               limit_is_per_hand=impl in ("dumbbell", "kettlebell")))
     db.add(PerformanceRecord(owner_id=owner_id, task_key="deadlift_barbell", load_kg=180, reps=1, record_date=today - timedelta(days=20), effort_rpe=9, source_type="self_reported", conditions="Conventional, standard barbell"))
     db.add(PerformanceRecord(owner_id=owner_id, task_key="press_barbell_strict", load_kg=65, reps=1, record_date=today - timedelta(days=14), effort_rpe=9, source_type="verified_training"))
     db.add(PerformanceRecord(owner_id=owner_id, task_key="squat_barbell", load_kg=150, reps=5, record_date=today - timedelta(days=10), effort_rpe=8, source_type="self_reported"))

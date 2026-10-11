@@ -16,7 +16,8 @@ def _digest(payload) -> str:
 def evidence_fingerprint(profile, equipment: list, records: list) -> str:
     return _digest({
         "eligibility": [profile.body_weight_kg, profile.age, profile.division_category] if profile else None,
-        "equipment": sorted([e.implement, e.access, e.max_load_kg, e.carry_space_m] for e in equipment),
+        "equipment": sorted([e.implement, e.access, e.max_load_kg, e.carry_space_m] + ([True] if getattr(e, "limit_is_per_hand", False) else [])
+                            for e in equipment),
         "records": sorted(
             [r.id, r.task_key, r.load_kg, bool(r.load_per_hand), r.reps, r.distance_m, r.time_s,
              r.record_date.isoformat(), r.source_type]

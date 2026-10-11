@@ -48,7 +48,7 @@ def test_editing_and_deleting_a_record_make_reports_stale(demo_athlete):
 def test_saving_unchanged_equipment_is_not_a_change_but_real_changes_are(demo_athlete):
     client, *_ = demo_athlete
     a = new_report(client)
-    same = [{k: e[k] for k in ("implement", "access", "max_load_kg", "carry_space_m", "notes")} for e in client.get("/equipment").json()]
+    same = [{k: e[k] for k in ("implement", "access", "max_load_kg", "limit_is_per_hand", "carry_space_m", "notes")} for e in client.get("/equipment").json()]
     assert client.put("/equipment", json=same).status_code == 200  # rows are replaced, content identical
     assert report(client, a["id"])["stale"] is False
     changed = [dict(e, max_load_kg=(e["max_load_kg"] or 0) + 10) if e["implement"] == "barbell" else e for e in same]
@@ -180,7 +180,7 @@ def test_cosmetic_profile_changes_do_not_stale_a_plan(demo_athlete):
 def test_equipment_access_change_stales_the_plan(demo_athlete):
     client, *_ = demo_athlete
     full, div, a, plan = run_journey(client)
-    eq = [{k: e[k] for k in ("implement", "access", "max_load_kg", "carry_space_m", "notes")} for e in client.get("/equipment").json()]
+    eq = [{k: e[k] for k in ("implement", "access", "max_load_kg", "limit_is_per_hand", "carry_space_m", "notes")} for e in client.get("/equipment").json()]
     client.put("/equipment", json=eq)  # unchanged content
     assert client.get(f"/preparation-plans/{plan['id']}").json()["stale"] is False
     client.put("/equipment", json=[dict(e, access="none") if e["implement"] == "log" else e for e in eq])
@@ -221,3 +221,29 @@ def test_other_accounts_cannot_stale_my_plan(live):
     client.put("/athlete-profile", json={**prof, "days_per_week": 2, "pain_flags": ["knee"]}, headers=B)
     client.put("/equipment", json=[], headers=B)
     assert client.get(f"/preparation-plans/{plan['id']}", headers=A).json()["stale"] is False
+
+
+# ---------------------------------------------------------------- per-hand limit flag (step A4)
+def test_toggling_the_per_hand_flag_changes_the_report_fingerprint(demo_athlete):
+    client, *_ = demo_athlete
+    a = new_report(client)
+    eq = [{k: e[k] for k in ("implement", "access", "max_load_kg", "limit_is_per_hand", "carry_space_m", "notes")} for e in client.get("/equipment").json()]
+    client.put("/equipment", json=eq)
+    assert report(client, a["id"])["stale"] is False
+    client.put("/equipment", json=[dict(e, limit_is_per_hand=not e["limit_is_per_hand"]) if e["implement"] == "dumbbell" else e for e in eq])
+    assert report(client, a["id"])["stale"] is True
+
+
+def test_fingerprint_is_unchanged_for_data_without_the_flag():
+    """Existing reports must not all turn stale when the new column appears: a False/absent flag hashes as before."""
+    from types import SimpleNamespace as NS
+    from app.services.evidence import evidence_fingerprint
+    prof = NS(body_weight_kg=98.0, age=29, division_category="men")
+    rec = NS(id=1, task_key="deadlift_barbell", load_kg=180.0, load_per_hand=False, reps=1, distance_m=None, time_s=None,
+             record_date=date(2026, 9, 1), source_type="self_reported")
+    old_style = NS(implement="barbell", access="regular", max_load_kg=200.0, carry_space_m=None)
+    new_false = NS(implement="barbell", access="regular", max_load_kg=200.0, carry_space_m=None, limit_is_per_hand=False)
+    new_true = NS(implement="barbell", access="regular", max_load_kg=200.0, carry_space_m=None, limit_is_per_hand=True)
+    base = evidence_fingerprint(prof, [old_style], [rec])
+    assert evidence_fingerprint(prof, [new_false], [rec]) == base
+    assert evidence_fingerprint(prof, [new_true], [rec]) != base

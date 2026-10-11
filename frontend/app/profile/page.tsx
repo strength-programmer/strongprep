@@ -137,26 +137,26 @@ function AthleteForm({ refData, initial, completeness, onSaved }: { refData: Ref
 function EquipmentForm({ refData, initial, onSaved }: { refData: Ref; initial: any[]; onSaved: () => void }) {
   const byImpl = Object.fromEntries(initial.map((e) => [e.implement, e]));
   const [rows, setRows] = useState(() =>
-    refData.implements.map((i) => ({ implement: i.key, label: i.label, access: byImpl[i.key]?.access ?? "", max: byImpl[i.key]?.max_load_kg?.toString() ?? "", notes: byImpl[i.key]?.notes ?? "" })));
+    refData.implements.map((i) => ({ implement: i.key, label: i.label, access: byImpl[i.key]?.access ?? "", max: byImpl[i.key]?.max_load_kg?.toString() ?? "", perHand: Boolean(byImpl[i.key]?.limit_is_per_hand), notes: byImpl[i.key]?.notes ?? "" })));
   const [ok, setOk] = useState<string | null>(null);
   const [err, setErr] = useState<ApiError | null>(null);
-  const upd = (i: number, k: string, v: string) => setRows((r) => r.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const upd = (i: number, k: string, v: string | boolean) => setRows((r) => r.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setOk(null); setErr(null);
     try {
-      await api("/equipment", { method: "PUT", body: rows.filter((r) => r.access).map((r) => ({ implement: r.implement, access: r.access, max_load_kg: numOrNull(r.max), notes: r.notes || null })) });
+      await api("/equipment", { method: "PUT", body: rows.filter((r) => r.access).map((r) => ({ implement: r.implement, access: r.access, max_load_kg: numOrNull(r.max), limit_is_per_hand: r.perHand, notes: r.notes || null })) });
       setOk("Equipment saved."); onSaved();
     } catch (x) { setErr(x as ApiError); }
   };
 
   return (
     <Card title={<span id="equipment">Equipment access</span>}>
-      <p className="small muted">Leave “Not recorded” if you are unsure. “Occasional” means you have agreed access (e.g. a specialist gym) that the plan may schedule deliberately. “None” means plans will never require it.</p>
+      <p className="small muted">Leave “Not recorded” if you are unsure. “Occasional” means you have agreed access (e.g. a specialist gym) that the plan may schedule deliberately. “None” means plans will never require it. For handles, dumbbells and kettlebells, set “Limit is” to per hand if your max is for one hand.</p>
       <form onSubmit={submit} className="stack">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Implement</th><th>Access</th><th className="num">Max load (kg)</th><th>Notes</th></tr></thead>
+            <thead><tr><th>Implement</th><th>Access</th><th className="num">Max load (kg)</th><th>Limit is</th><th>Notes</th></tr></thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={r.implement}>
@@ -167,6 +167,11 @@ function EquipmentForm({ refData, initial, onSaved }: { refData: Ref; initial: a
                     </select>
                   </td>
                   <td><input aria-label={`${r.label} max load`} type="number" min="0" disabled={!r.access || r.access === "none"} value={r.max} onChange={(e) => upd(i, "max", e.target.value)} /></td>
+                  <td>
+                    <select aria-label={`${r.label} limit basis`} disabled={!r.access || r.access === "none" || !r.max} value={r.perHand ? "hand" : "total"} onChange={(e) => upd(i, "perHand", e.target.value === "hand")}>
+                      <option value="total">total</option><option value="hand">per hand</option>
+                    </select>
+                  </td>
                   <td><input aria-label={`${r.label} notes`} value={r.notes} onChange={(e) => upd(i, "notes", e.target.value)} /></td>
                 </tr>
               ))}
