@@ -1,6 +1,6 @@
 """FICTIONAL fixtures. Nothing here is a real competition, a real athlete, real research or reviewed coaching content."""
 import random
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 DEMO_LABEL = "FICTIONAL competition: demo data, not a real event"
 
@@ -32,7 +32,7 @@ TEMPLATES = [
 
 # name, status, day offset, city, divisions
 COMPETITIONS = [
-    {"title": "Harbor Strongman Open", "organizer": "Harborview Strength Club (fictional)", "city": "Harborview", "country": "Nowhere", "days": 56, "status": "upcoming", "fee": 40.0,
+    {"title": "Harbor Strongman Open", "organizer": "Harborview Strength Club (fictional)", "city": "Harborview", "country": "Nowhere", "days": 56, "time": time(9, 0), "tz": "Asia/Manila", "status": "upcoming", "fee": 40.0,
      "divisions": [
          {"name": "Novice Men -105 kg", "category": "men", "wmax": 105.0, "events": [
              ("Deadlift for reps (60 s)", "deadlift_barbell", "reps", 160, False, 60, None, "160 kg", "kg", "Max reps in 60 seconds, standard barbell, touch-and-go permitted."),
@@ -45,7 +45,7 @@ COMPETITIONS = [
              ("Log clean and press", "log_clean_press", "reps", 40, False, 75, None, "40 kg", "kg", "Max reps in 75 seconds."),
          ]},
      ]},
-    {"title": "Ridge Iron Games", "organizer": "Ridge Iron Collective (fictional)", "city": "Ridgeton", "country": "Nowhere", "days": 120, "status": "upcoming", "fee": 55.0,
+    {"title": "Ridge Iron Games", "organizer": "Ridge Iron Collective (fictional)", "city": "Ridgeton", "country": "Nowhere", "days": 120, "time": time(8, 30), "tz": "Asia/Manila", "status": "upcoming", "fee": 55.0,
      "divisions": [
          {"name": "Open Novice", "category": "open", "events": [
              ("Max deadlift", "deadlift_barbell", "max_load", None, False, None, None, None, "unknown", "Heaviest successful single, standard barbell. Weight ladder not yet published."),
@@ -57,7 +57,7 @@ COMPETITIONS = [
              ("Max deadlift", "deadlift_barbell", "max_load", 200, False, None, None, "200 kg", "kg", "Heaviest successful single."),
          ]},
      ]},
-    {"title": "Quarry Challenge", "organizer": "Quarry Lifters (fictional)", "city": "Quarryfield", "country": "Nowhere", "days": 21, "status": "upcoming", "fee": 25.0,
+    {"title": "Quarry Challenge", "organizer": "Quarry Lifters (fictional)", "city": "Quarryfield", "country": "Nowhere", "days": 21, "time": time(10, 0), "tz": "Asia/Manila", "status": "upcoming", "fee": 25.0,
      "divisions": [
          {"name": "Novice Men -105 kg", "category": "men", "wmax": 105.0, "events": [
              ("Max deadlift", "deadlift_barbell", "max_load", 150, False, None, None, "150 kg", "kg", "Bar loaded to 150 kg; successful single scores."),
@@ -95,16 +95,29 @@ def seed_templates(db):
     db.commit()
 
 
+def _backfill_times(db):
+    """Fixtures seeded before venue times existed: fill start_time/timezone where still unset (never overwrites)."""
+    from app.models import Competition
+    for c in COMPETITIONS:
+        if not c.get("time"):
+            continue
+        row = db.query(Competition).filter(Competition.owner_id.is_(None), Competition.title == f"{c['title']} (fictional)").first()
+        if row and row.start_time is None and row.timezone is None:
+            row.start_time, row.timezone = c["time"], c["tz"]
+    db.commit()
+
+
 def seed_competitions(db, today: date | None = None):
     from app.models import (Competition, CompetitionDivision, EventSpecification, HistoricalResult, SourceEvidence)
     today = today or date.today()
     if db.query(Competition).filter(Competition.owner_id.is_(None)).count():
+        _backfill_times(db)
         return False
     now = datetime.now(timezone.utc)
     for c in COMPETITIONS:
         comp = Competition(
             owner_id=None, title=f"{c['title']} (fictional)", organizer=c["organizer"], venue="Fictional Arena", city=c["city"],
-            country=c["country"], start_date=today + timedelta(days=c["days"]),
+            country=c["country"], start_date=today + timedelta(days=c["days"]), start_time=c.get("time"), timezone=c.get("tz"),
             registration_deadline=today + timedelta(days=c["days"] - 14) if c["status"] == "upcoming" else None,
             source_url="fixture://" + c["title"].lower().replace(" ", "-"), registration_url=None,
             entry_fee=c["fee"], fee_currency="USD" if c["fee"] else None, last_checked_at=now, last_confirmed_at=None,

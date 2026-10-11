@@ -2,7 +2,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, ApiError, useApi } from "@/lib/api";
-import { fmtDate, kg, metres, numOrNull, seconds } from "@/lib/format";
+import { fmtDate, fmtVenueTime, kg, metres, numOrNull, seconds } from "@/lib/format";
 import { Badge, Card, CompStatusBadge, DemoBadge, ErrorBox, Loading } from "@/components/ui";
 
 export default function CompetitionDetail() {
@@ -50,6 +50,7 @@ export default function CompetitionDetail() {
       <Card title="Details">
         <div className="grid">
           <div><div className="field-label">Date</div>{fmtDate(c.start_date)}</div>
+          <div><div className="field-label">Start time</div>{fmtVenueTime(c.start_time, c.timezone)}</div>
           <div><div className="field-label">Registration deadline</div>{fmtDate(c.registration_deadline)}</div>
           <div><div className="field-label">Venue / city</div>{[c.venue, c.city, c.country].filter(Boolean).join(", ") || "Unknown"}</div>
           <div><div className="field-label">Organizer</div>{c.organizer ?? "Unknown"}</div>

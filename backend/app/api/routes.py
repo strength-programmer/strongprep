@@ -18,6 +18,7 @@ from app.schemas import (AiSettingsIn, AssessmentIn, CompetitionIn, EquipmentIte
                          TrainingLogIn)
 from app.services import assessment as assess_svc
 from app.services import ai_settings as ai_svc
+from app.services.times import to_utc
 from app.services import evidence as evidence_svc
 from app.services import planning, secrets
 
@@ -167,8 +168,14 @@ def delete_record(rid: int, owner: str = Depends(current_owner), db: Session = D
 
 
 # ---------------------------------------------------------------- competitions
+def _start_utc(c: Competition) -> str | None:
+    dt = to_utc(c.start_date, c.start_time, c.timezone)
+    return dt.isoformat() if dt else None
+
+
 def _comp_summary(c: Competition) -> dict:
     out = d(c)
+    out["start_at_utc"] = _start_utc(c)
     out["divisions"] = [{"id": v.id, "name": v.name, "category": v.category, "event_count": len(v.events)} for v in c.divisions]
     out["is_shared_catalog"] = c.owner_id is None
     return out
@@ -212,6 +219,7 @@ def get_competition(cid: int, owner: str | None = Depends(optional_owner), db: S
         by_event.setdefault(x.entity_id, []).append(x)
     comp_ev = db.query(SourceEvidence).filter_by(entity_type="competition", entity_id=c.id).all()
     out = d(c)
+    out["start_at_utc"] = _start_utc(c)
     out["is_shared_catalog"] = c.owner_id is None
     out["evidence"] = [d(x) for x in comp_ev]
     out["divisions"] = [{**d(v), "events": [_event_dict(e, by_event) for e in v.events]} for v in c.divisions]

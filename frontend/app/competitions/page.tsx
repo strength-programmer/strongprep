@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api, ApiError, useApi } from "@/lib/api";
-import { fmtDate, numOrNull } from "@/lib/format";
+import { fmtDate, fmtVenueTime, numOrNull } from "@/lib/format";
 import { Card, CompStatusBadge, DemoBadge, Badge, Empty, ErrorBox, Field, Loading } from "@/components/ui";
 
 export default function Competitions() {
@@ -53,7 +53,7 @@ export default function Competitions() {
                 </div>
                 <div>
                   <Link href={`/competitions/${c.id}`} className="title">{c.title}</Link>
-                  <div className="small muted">{[c.city, c.country].filter(Boolean).join(", ") || "Location unknown"} · {c.divisions.map((d: any) => d.name).join(" · ")}</div>
+                  <div className="small muted">{[c.city, c.country].filter(Boolean).join(", ") || "Location unknown"} · {fmtVenueTime(c.start_time, c.timezone)} · {c.divisions.map((d: any) => d.name).join(" · ")}</div>
                   <div>
                     <CompStatusBadge status={c.status} />
                     {c.status === "upcoming" && days >= 0 && <Badge tone="info">{days} days away</Badge>}
@@ -79,10 +79,16 @@ const SCORING = ["max_load", "reps", "time", "distance", "custom"];
 function ManualEntry({ onCreated }: { onCreated: () => void }) {
   const ref = useApi<any>("/reference");
   const router = useRouter();
-  const [f, setF] = useState({ title: "", organizer: "", city: "", start_date: "", source_url: "", div_name: "Open", category: "open", wmin: "", wmax: "", amin: "", amax: "", notes: "" });
+  const [f, setF] = useState({ title: "", organizer: "", city: "", start_date: "", start_time: "", timezone: "", source_url: "", div_name: "Open", category: "open", wmin: "", wmax: "", amin: "", amax: "", notes: "" });
   const [events, setEvents] = useState([{ name: "", task_key: "deadlift_barbell", scoring_type: "max_load", load: "", per_hand: false, unit: "kg", time: "", dist: "", rules: "" }]);
   const [err, setErr] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
+  // Filled after mount: Node and the browser list different zones, so computing this during render
+  // would not match the server-rendered HTML (React hydration error).
+  const [zones, setZones] = useState<string[]>([]);
+  useEffect(() => {
+    try { setZones((Intl as any).supportedValuesOf("timeZone") as string[]); } catch { setZones(["Asia/Manila", "UTC"]); }
+  }, []);
   const set = (k: string, v: string) => setF((s) => ({ ...s, [k]: v }));
   const setEv = (i: number, k: string, v: any) => setEvents((e) => e.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
 
@@ -90,7 +96,7 @@ function ManualEntry({ onCreated }: { onCreated: () => void }) {
     e.preventDefault(); setBusy(true); setErr(null);
     try {
       const c = await api("/competitions", { method: "POST", body: {
-        title: f.title, organizer: f.organizer || null, city: f.city || null, start_date: f.start_date, source_url: f.source_url || null,
+        title: f.title, organizer: f.organizer || null, city: f.city || null, start_date: f.start_date, start_time: f.start_time || null, timezone: f.timezone || null, source_url: f.source_url || null,
         divisions: [{
           name: f.div_name, category: f.category, weight_min_kg: numOrNull(f.wmin), weight_max_kg: numOrNull(f.wmax), age_min: numOrNull(f.amin), age_max: numOrNull(f.amax),
           eligibility_notes: f.notes || null, needs_manual_confirmation: Boolean(f.notes),
@@ -115,7 +121,12 @@ function ManualEntry({ onCreated }: { onCreated: () => void }) {
         <form className="stack" onSubmit={submit}>
           <div className="row">
             <Field label="Title"><input required value={f.title} onChange={(e) => set("title", e.target.value)} /></Field>
-            <Field label="Date"><input required type="date" value={f.start_date} onChange={(e) => set("start_date", e.target.value)} /></Field>
+            <Field label="Date (venue local)"><input required type="date" value={f.start_date} onChange={(e) => set("start_date", e.target.value)} /></Field>
+            <Field label="Start time (optional)" hint="Leave blank if not published."><input type="time" value={f.start_time} onChange={(e) => set("start_time", e.target.value)} /></Field>
+            <Field label="Time zone" hint="Required with a start time, e.g. Asia/Manila.">
+              <input list="tz-list" value={f.timezone} onChange={(e) => set("timezone", e.target.value)} placeholder="Asia/Manila" required={Boolean(f.start_time)} />
+              <datalist id="tz-list">{zones.map((z) => <option key={z} value={z} />)}</datalist>
+            </Field>
             <Field label="City"><input value={f.city} onChange={(e) => set("city", e.target.value)} /></Field>
             <Field label="Organizer"><input value={f.organizer} onChange={(e) => set("organizer", e.target.value)} /></Field>
           </div>

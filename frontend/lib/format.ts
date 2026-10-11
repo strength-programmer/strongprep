@@ -41,6 +41,14 @@ export function fmtDate(iso: string | null | undefined): string {
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+/** Venue-local start time as published, e.g. "9:00 AM (Asia/Manila, venue time)". Never guesses a missing time. */
+export function fmtVenueTime(time: string | null | undefined, tz: string | null | undefined): string {
+  if (!time) return "Time not published";
+  const [h, m] = time.split(":").map(Number);
+  const hh = ((h + 11) % 12) + 1;
+  return `${hh}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}${tz ? ` (${tz}, venue time)` : ""}`;
+}
+
 export function numOrNull(s: string): number | null {
   if (s.trim() === "") return null;
   const n = Number(s);

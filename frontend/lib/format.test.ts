@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorLines, fmtDate, kg, numOrNull, ratioText } from "./format";
+import { errorLines, fmtDate, fmtVenueTime, kg, numOrNull, ratioText } from "./format";
 
 describe("format helpers", () => {
   it("formats loads with explicit per-hand labelling", () => {
@@ -21,6 +21,14 @@ describe("format helpers", () => {
     expect(errorLines("nope")).toEqual(["nope"]);
     expect(errorLines({ message: "Failed", errors: ["a", "b"] })).toEqual(["Failed", "a", "b"]);
     expect(errorLines([{ loc: ["body", "age"], msg: "too small" }])).toEqual(["age: too small"]);
+  });
+
+  it("formats venue-local times and never guesses a missing one", () => {
+    expect(fmtVenueTime("09:00:00", "Asia/Manila")).toBe("9:00 AM (Asia/Manila, venue time)");
+    expect(fmtVenueTime("00:05:00", "UTC")).toBe("12:05 AM (UTC, venue time)");
+    expect(fmtVenueTime("12:00:00", null)).toBe("12:00 PM");
+    expect(fmtVenueTime("18:30:00", "Asia/Manila")).toBe("6:30 PM (Asia/Manila, venue time)");
+    expect(fmtVenueTime(null, "Asia/Manila")).toBe("Time not published");
   });
 
   it("formats ISO dates without timezone shifting", () => {

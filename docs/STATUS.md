@@ -1,10 +1,10 @@
 # Implementation checkpoint
 
 Updated: October 11, 2026.
-Milestones 00-05 and a synthetic-data version of 06 are implemented. Finish-the-project plan: A1-A4 done (frontend localhost bind; report and plan staleness; per-hand equipment limits). Next: **05b contract alignment and evidence staleness** (see ROADMAP).
+Milestones 00-05 and a synthetic-data version of 06 are implemented. Finish-the-project plan: A1-A4 and B1 done (frontend localhost bind; report and plan staleness; per-hand equipment limits; venue time zones). Next: **05b contract alignment and evidence staleness** (see ROADMAP).
 
 ## Implemented and verified
-Verified by running: backend `pytest` (80 passing), frontend `vitest` (4), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
+Verified by running: backend `pytest` (91 passing), frontend `vitest` (5), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
 
 | Area | Where | Notes |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ Verified by running: backend `pytest` (80 passing), frontend `vitest` (4), `tsc 
 ## Known gaps versus these docs (highest priority first)
 1. **Contract drift** (see the table at the top of CONTRACTS): integer ids, no `/api/v1` prefix, `/equipment` + `/target`, "saved" instead of "active", plain FastAPI errors, no pagination, no revision fields on profile/equipment.
 2. No `repositories` layer: routes call ORM directly (`api/routes.py` is one large file). Split by feature when it next changes.
-3. Competition times are dates only (no time zone). No `PATCH /competitions/{id}`; only events are editable, and only private ones.
+3. No `PATCH /competitions/{id}`; only events are editable, and only private ones.
 4. Plan "activation" is a plain save; there is no single-active-plan rule.
 5. UI redesigned (sidebar/bottom-tab shell, next-step hero + journey tracker, event cards with a 3-fact evidence tracker, plan week tabs, pre-filled training log) and screenshot-checked in headless Chromium, but form interactions were not click-tested. Claude adapter never run against the real API. Supabase never tried live. No RLS policies.
 

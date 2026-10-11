@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.data.reference import BODY_AREAS, TASKS
+from app.services.times import valid_timezone
 
 Category = Literal["men", "women", "open"]
 
@@ -133,12 +134,22 @@ class CompetitionIn(BaseModel):
     city: str | None = None
     country: str | None = None
     start_date: date
+    start_time: time | None = None  # venue-local; requires timezone
+    timezone: str | None = Field(None, max_length=64)
     registration_deadline: date | None = None
     source_url: str | None = Field(None, max_length=500)
     registration_url: str | None = Field(None, max_length=500)
     entry_fee: float | None = Field(None, ge=0)
     fee_currency: str | None = Field(None, max_length=8)
     divisions: list[DivisionIn] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _time_needs_zone(self):
+        if self.timezone is not None and not valid_timezone(self.timezone):
+            raise ValueError(f"unknown time zone '{self.timezone}' (use an IANA name such as Asia/Manila)")
+        if self.start_time is not None and not self.timezone:
+            raise ValueError("choose a time zone when you enter a start time; a bare time is ambiguous")
+        return self
 
 
 class AssessmentIn(BaseModel):

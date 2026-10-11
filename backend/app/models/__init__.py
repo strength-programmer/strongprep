@@ -1,6 +1,6 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, Time
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -80,6 +80,8 @@ class Competition(Base):
     city: Mapped[str | None] = mapped_column(String(120))
     country: Mapped[str | None] = mapped_column(String(80))
     start_date: Mapped[date] = mapped_column(Date)
+    start_time: Mapped[time | None] = mapped_column(Time)  # venue-local wall-clock time; None = not published
+    timezone: Mapped[str | None] = mapped_column(String(64))  # IANA name, e.g. Asia/Manila
     registration_deadline: Mapped[date | None] = mapped_column(Date)
     source_url: Mapped[str | None] = mapped_column(String(500))
     registration_url: Mapped[str | None] = mapped_column(String(500))
