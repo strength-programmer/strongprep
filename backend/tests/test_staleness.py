@@ -124,3 +124,100 @@ def test_another_accounts_changes_never_affect_my_reports(live):
     assert client.get(f"/assessments/{a['id']}", headers=A).json()["stale"] is False
     client.post("/performance-records", json={"task_key": "deadlift_barbell", "load_kg": 150, "reps": 1, "record_date": TODAY}, headers=A)
     assert client.get(f"/assessments/{a['id']}", headers=A).json()["stale"] is True
+
+
+# ---------------------------------------------------------------- plan inputs (step A3)
+PLAN_REASON = "Your availability, exercise restrictions or equipment changed"
+
+
+def profile_body(client, **over):
+    p = client.get("/athlete-profile").json()["profile"]
+    keys = ("body_weight_kg", "age", "division_category", "experience_level", "competitions_entered", "city", "travel_radius_km",
+            "days_per_week", "session_minutes", "other_commitments", "avoid_exercises", "pain_flags", "goal", "display_name")
+    return {**{k: p[k] for k in keys}, **over}
+
+
+def test_availability_change_stales_the_plan_but_not_the_report(demo_athlete):
+    client, *_ = demo_athlete
+    full, div, a, plan = run_journey(client)
+    assert plan["stale"] is False
+    for over in ({"days_per_week": 3}, {"session_minutes": 60}):
+        client.put("/athlete-profile", json=profile_body(client, **over))
+        p = client.get(f"/preparation-plans/{plan['id']}").json()
+        assert p["stale"] is True and any(PLAN_REASON in x for x in p["stale_reasons"]), over
+        assert report(client, a["id"])["stale"] is False, "availability does not affect the report"
+        client.put("/athlete-profile", json=profile_body(client, days_per_week=4, session_minutes=75))
+        assert client.get(f"/preparation-plans/{plan['id']}").json()["stale"] is False  # changing back restores it
+
+
+def test_restrictions_stale_the_plan_and_block_saving(demo_athlete):
+    client, *_ = demo_athlete
+    full, div, a, plan = run_journey(client)
+    client.put("/athlete-profile", json=profile_body(client, pain_flags=["shoulder"]))
+    assert client.get(f"/preparation-plans/{plan['id']}").json()["stale"] is True
+    r = client.post(f"/preparation-plans/{plan['id']}/save")
+    assert r.status_code == 409 and "Generate a new plan" in r.json()["detail"]["message"]
+    assert any(PLAN_REASON in x for x in r.json()["detail"]["errors"])
+    # the same (still fresh) report can produce a new plan that respects the new restriction
+    new = client.post("/preparation-plans", json={"assessment_id": a["id"]})
+    assert new.status_code == 201 and new.json()["stale"] is False
+    used = {x["template_key"] for w in new.json()["content"]["weeks"] for s in w["sessions"] for x in s["exercises"]}
+    assert not ({"strict_press", "push_press", "db_press", "log_clean_press_practice"} & used)
+    assert client.post(f"/preparation-plans/{new.json()['id']}/save").status_code == 200
+    # avoid list works the same way
+    client.put("/athlete-profile", json=profile_body(client, pain_flags=["shoulder"], avoid_exercises=["back_squat"]))
+    assert client.get(f"/preparation-plans/{new.json()['id']}").json()["stale"] is True
+
+
+def test_cosmetic_profile_changes_do_not_stale_a_plan(demo_athlete):
+    client, *_ = demo_athlete
+    full, div, a, plan = run_journey(client)
+    for over in ({"display_name": "X"}, {"city": "Elsewhere"}, {"goal": "perform"}, {"other_commitments": "nights"}):
+        client.put("/athlete-profile", json=profile_body(client, **over))
+        assert client.get(f"/preparation-plans/{plan['id']}").json()["stale"] is False, over
+
+
+def test_equipment_access_change_stales_the_plan(demo_athlete):
+    client, *_ = demo_athlete
+    full, div, a, plan = run_journey(client)
+    eq = [{k: e[k] for k in ("implement", "access", "max_load_kg", "carry_space_m", "notes")} for e in client.get("/equipment").json()]
+    client.put("/equipment", json=eq)  # unchanged content
+    assert client.get(f"/preparation-plans/{plan['id']}").json()["stale"] is False
+    client.put("/equipment", json=[dict(e, access="none") if e["implement"] == "log" else e for e in eq])
+    p = client.get(f"/preparation-plans/{plan['id']}").json()
+    assert p["stale"] is True and any(PLAN_REASON in x for x in p["stale_reasons"])
+
+
+def test_plans_made_before_input_fingerprints_are_unknown_not_stale(demo_athlete):
+    client, Session, *_ = demo_athlete
+    full, div, a, plan = run_journey(client)
+    from app.models import PreparationPlan
+    with Session() as db:
+        db.get(PreparationPlan, plan["id"]).inputs_hash = None
+        db.commit()
+    client.put("/athlete-profile", json=profile_body(client, days_per_week=2))
+    assert client.get(f"/preparation-plans/{plan['id']}").json()["stale"] is False
+
+
+def test_plan_list_and_dashboard_show_input_staleness(demo_athlete):
+    client, *_ = demo_athlete
+    run_journey(client)
+    client.put("/athlete-profile", json=profile_body(client, pain_flags=["knee"]))
+    assert client.get("/preparation-plans").json()[0]["stale"] is True
+    d = client.get("/dashboard").json()
+    assert d["plan"]["stale"] is True and d["assessment"]["stale"] is False
+
+
+def test_other_accounts_cannot_stale_my_plan(live):
+    client, Session, s = live
+    A, B = auth("user-a"), auth("user-b")
+    prof = {"body_weight_kg": 95, "age": 30, "division_category": "men", "days_per_week": 4, "session_minutes": 75}
+    for h in (A, B):
+        client.put("/athlete-profile", json=prof, headers=h)
+        client.put("/equipment", json=[{"implement": "barbell", "access": "regular"}], headers=h)
+    comp = next(c for c in client.get("/competitions", headers=A).json() if c["title"].startswith("Harbor"))
+    a = client.post("/assessments", json={"competition_id": comp["id"], "division_id": comp["divisions"][0]["id"]}, headers=A).json()
+    plan = client.post("/preparation-plans", json={"assessment_id": a["id"]}, headers=A).json()
+    client.put("/athlete-profile", json={**prof, "days_per_week": 2, "pain_flags": ["knee"]}, headers=B)
+    client.put("/equipment", json=[], headers=B)
+    assert client.get(f"/preparation-plans/{plan['id']}", headers=A).json()["stale"] is False

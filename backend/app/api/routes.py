@@ -272,6 +272,10 @@ def _current_fingerprint(db: Session, owner: str) -> str:
         db.query(PerformanceRecord).filter_by(owner_id=owner).all())
 
 
+def _current_plan_fingerprint(db: Session, owner: str) -> str:
+    return evidence_svc.plan_inputs_fingerprint(_profile(db, owner), db.query(EquipmentAccess).filter_by(owner_id=owner).all())
+
+
 def _stale(a: Assessment, db: Session, fp: str | None = None) -> tuple[bool, list[str]]:
     """fp: the owner's current evidence fingerprint, passed in by list endpoints to avoid recomputing."""
     div = db.get(CompetitionDivision, a.division_id)
@@ -338,9 +342,12 @@ def get_assessment(aid: int, owner: str = Depends(current_owner), db: Session = 
 
 
 # ---------------------------------------------------------------- plans
-def _plan_out(p: PreparationPlan, db: Session, fp: str | None = None) -> dict:
+def _plan_out(p: PreparationPlan, db: Session, fp: str | None = None, pfp: str | None = None) -> dict:
     a = db.get(Assessment, p.assessment_id)
     stale, reasons = _stale(a, db, fp)
+    if p.inputs_hash is not None and (pfp or _current_plan_fingerprint(db, p.owner_id)) != p.inputs_hash:
+        reasons = reasons + ["Your availability, exercise restrictions or equipment changed since this plan was made."]
+        stale = True
     out = d(p)
     out["stale"], out["stale_reasons"] = stale, reasons
     out["competition_title"] = a.result["competition"]["title"]
@@ -376,7 +383,8 @@ def create_plan(body: PlanIn, owner: str = Depends(current_owner), db: Session =
     used = {x["key"]: x["template_version"] for x in ctx["templates"]}
     version = db.query(PreparationPlan).filter_by(owner_id=owner, assessment_id=a.id).count() + 1
     p = PreparationPlan(owner_id=owner, assessment_id=a.id, version=version, provider=provider,
-                        template_versions=sorted({f"{k}@{v}" for k, v in used.items()}), content=plan, review_state="draft")
+                        template_versions=sorted({f"{k}@{v}" for k, v in used.items()}), content=plan, review_state="draft",
+                        inputs_hash=evidence_svc.plan_inputs_fingerprint(profile, equipment))
     db.add(p)
     db.commit()
     return _plan_out(p, db)
@@ -384,8 +392,8 @@ def create_plan(body: PlanIn, owner: str = Depends(current_owner), db: Session =
 
 @router.get("/preparation-plans")
 def list_plans(owner: str = Depends(current_owner), db: Session = Depends(get_db)):
-    fp = _current_fingerprint(db, owner)
-    return [{k: v for k, v in _plan_out(p, db, fp).items() if k != "content"} for p in
+    fp, pfp = _current_fingerprint(db, owner), _current_plan_fingerprint(db, owner)
+    return [{k: v for k, v in _plan_out(p, db, fp, pfp).items() if k != "content"} for p in
             db.query(PreparationPlan).filter_by(owner_id=owner).order_by(PreparationPlan.id.desc())]
 
 
@@ -399,7 +407,7 @@ def save_plan(pid: int, owner: str = Depends(current_owner), db: Session = Depen
     p = _own_plan(db, owner, pid)
     out = _plan_out(p, db)
     if out["stale"]:
-        raise HTTPException(409, detail={"message": "Stale plans cannot be saved; reassess and regenerate.", "errors": out["stale_reasons"]})
+        raise HTTPException(409, detail={"message": "This plan is out of date and cannot be saved. Generate a new plan (reassess first if the report is also out of date).", "errors": out["stale_reasons"]})
     p.review_state, p.saved_at = "saved", now()
     db.commit()
     return _plan_out(p, db)

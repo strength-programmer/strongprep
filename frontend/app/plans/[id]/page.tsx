@@ -30,7 +30,7 @@ export default function PlanPage() {
         <Badge tone={p.provider === "mock" ? "demo" : "info"}>{c.ai_label}</Badge> <span className="small muted">Plan v{p.version} · {p.template_versions.length} templates used</span>
       </p>
       <div className="alert alert-info">{c.demo_notice} {c.template_notice}</div>
-      {p.stale && <div className="alert alert-warn" role="alert"><strong>This plan is stale.</strong> {p.stale_reasons.join(" ")} Run a new assessment and generate a new plan. <Link href={`/assessments/${p.assessment_id}`}>Open the original report</Link></div>}
+      {p.stale && <div className="alert alert-warn" role="alert"><strong>This plan is stale.</strong> {p.stale_reasons.join(" ")} Generate a new plan (reassess first if the report is also out of date). <Link href={`/assessments/${p.assessment_id}`}>Open the original report</Link></div>}
       <ErrorBox error={err} />
 
       <Card title="Why this plan (from your gap report)" actions={<Link className="btn btn-small" href={`/assessments/${p.assessment_id}`}>Gap report</Link>}>

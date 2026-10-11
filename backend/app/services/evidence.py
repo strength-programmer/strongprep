@@ -23,3 +23,14 @@ def evidence_fingerprint(profile, equipment: list, records: list) -> str:
             for r in records
         ),
     }, )
+
+
+def plan_inputs_fingerprint(profile, equipment: list) -> str:
+    """What the plan generator reads: availability, restrictions, and which implements are reachable.
+    Equipment max loads are excluded (plans prescribe no absolute loads)."""
+    return _digest({
+        "availability": [profile.days_per_week, profile.session_minutes] if profile else None,
+        "avoid": sorted(profile.avoid_exercises or []) if profile else [],
+        "pain": sorted(profile.pain_flags or []) if profile else [],
+        "equipment": sorted([e.implement, e.access] for e in equipment),
+    })

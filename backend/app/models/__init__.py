@@ -226,6 +226,7 @@ class PreparationPlan(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     provider: Mapped[str] = mapped_column(String(20))  # mock | claude
     template_versions: Mapped[list] = mapped_column(JSON, default=list)
+    inputs_hash: Mapped[str | None] = mapped_column(String(64))  # None = plan predates fingerprints
     content: Mapped[dict] = mapped_column(JSON)
     review_state: Mapped[str] = mapped_column(String(12), default="draft")  # draft | saved
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
