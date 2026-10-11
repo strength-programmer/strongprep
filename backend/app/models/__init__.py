@@ -211,6 +211,7 @@ class Assessment(Base):
     division_spec_version: Mapped[int] = mapped_column(Integer)
     competition_status: Mapped[str] = mapped_column(String(20))
     calculation_version: Mapped[str] = mapped_column(String(30))
+    evidence_hash: Mapped[str | None] = mapped_column(String(64))  # None = report predates fingerprints
     profile_snapshot: Mapped[dict] = mapped_column(JSON)
     result: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

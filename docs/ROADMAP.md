@@ -21,9 +21,9 @@ One milestone per task/session is the default. Load STATUS and CONTRACTS plus on
 | 00 Foundation | Done and verified |
 | 01 Athlete | Done; no evidence revisions yet |
 | 02 Competitions | Done; no time zones, no PATCH on competitions |
-| 03 Assessments | Done; **evidence-change staleness missing** |
+| 03 Assessments | Done; evidence-change staleness added in A2 |
 | 04 Planning | Done; save instead of activate |
-| 05 Training / full journey | Done; stale-after-new-evidence missing |
+| 05 Training / full journey | Done; reports go stale after new evidence (A2) |
 | **05b Alignment (next)** | Evidence staleness + fingerprint, then decide each CONTRACTS deviation, split `routes.py` by feature, browser-test the UI |
 | 06 Benchmarks | Done with synthetic data only; permitted real dataset still open |
 | 07 Live integrations | Not started (Claude adapter exists but is untested live) |

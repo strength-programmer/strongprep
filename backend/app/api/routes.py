@@ -18,6 +18,7 @@ from app.schemas import (AiSettingsIn, AssessmentIn, CompetitionIn, EquipmentIte
                          TrainingLogIn)
 from app.services import assessment as assess_svc
 from app.services import ai_settings as ai_svc
+from app.services import evidence as evidence_svc
 from app.services import planning, secrets
 
 router = APIRouter()
@@ -264,10 +265,21 @@ def update_event(eid: int, body: EventIn, owner: str = Depends(current_owner), d
 
 
 # ---------------------------------------------------------------- assessments
-def _stale(a: Assessment, db: Session) -> tuple[bool, list[str]]:
+def _current_fingerprint(db: Session, owner: str) -> str:
+    return evidence_svc.evidence_fingerprint(
+        _profile(db, owner),
+        db.query(EquipmentAccess).filter_by(owner_id=owner).all(),
+        db.query(PerformanceRecord).filter_by(owner_id=owner).all())
+
+
+def _stale(a: Assessment, db: Session, fp: str | None = None) -> tuple[bool, list[str]]:
+    """fp: the owner's current evidence fingerprint, passed in by list endpoints to avoid recomputing."""
     div = db.get(CompetitionDivision, a.division_id)
     comp = db.get(Competition, a.competition_id)
     reasons = []
+    if a.evidence_hash is not None:  # reports made before fingerprints existed are 'unknown', not stale
+        if (fp or _current_fingerprint(db, a.owner_id)) != a.evidence_hash:
+            reasons.append("Your records, equipment or profile changed since this report was made.")
     if div.spec_version != a.division_spec_version:
         reasons.append("The competition's event requirements changed after this report was made.")
     if comp.status != a.competition_status:
@@ -275,8 +287,8 @@ def _stale(a: Assessment, db: Session) -> tuple[bool, list[str]]:
     return bool(reasons), reasons
 
 
-def _assessment_out(a: Assessment, db: Session) -> dict:
-    stale, reasons = _stale(a, db)
+def _assessment_out(a: Assessment, db: Session, fp: str | None = None) -> dict:
+    stale, reasons = _stale(a, db, fp)
     out = d(a)
     out["stale"], out["stale_reasons"] = stale, reasons
     return out
@@ -304,6 +316,7 @@ def create_assessment(body: AssessmentIn, owner: str = Depends(current_owner), d
                              "record_ids": [r.id for r in records]})
     a = Assessment(owner_id=owner, competition_id=comp.id, division_id=div.id, division_spec_version=div.spec_version,
                    competition_status=comp.status, calculation_version=result["calculation_version"],
+                   evidence_hash=evidence_svc.evidence_fingerprint(profile, equipment, records),
                    profile_snapshot=snap, result=result)
     db.add(a)
     db.commit()
@@ -313,7 +326,8 @@ def create_assessment(body: AssessmentIn, owner: str = Depends(current_owner), d
 @router.get("/assessments")
 def list_assessments(owner: str = Depends(current_owner), db: Session = Depends(get_db)):
     rows = db.query(Assessment).filter_by(owner_id=owner).order_by(Assessment.id.desc()).all()
-    return [{**{k: v for k, v in _assessment_out(a, db).items() if k not in ("result", "profile_snapshot")},
+    fp = _current_fingerprint(db, owner)
+    return [{**{k: v for k, v in _assessment_out(a, db, fp).items() if k not in ("result", "profile_snapshot")},
              "summary_counts": a.result["summary_counts"], "competition_title": a.result["competition"]["title"],
              "division_name": a.result["division"]["name"]} for a in rows]
 
@@ -324,9 +338,9 @@ def get_assessment(aid: int, owner: str = Depends(current_owner), db: Session = 
 
 
 # ---------------------------------------------------------------- plans
-def _plan_out(p: PreparationPlan, db: Session) -> dict:
+def _plan_out(p: PreparationPlan, db: Session, fp: str | None = None) -> dict:
     a = db.get(Assessment, p.assessment_id)
-    stale, reasons = _stale(a, db)
+    stale, reasons = _stale(a, db, fp)
     out = d(p)
     out["stale"], out["stale_reasons"] = stale, reasons
     out["competition_title"] = a.result["competition"]["title"]
@@ -370,7 +384,8 @@ def create_plan(body: PlanIn, owner: str = Depends(current_owner), db: Session =
 
 @router.get("/preparation-plans")
 def list_plans(owner: str = Depends(current_owner), db: Session = Depends(get_db)):
-    return [{k: v for k, v in _plan_out(p, db).items() if k != "content"} for p in
+    fp = _current_fingerprint(db, owner)
+    return [{k: v for k, v in _plan_out(p, db, fp).items() if k != "content"} for p in
             db.query(PreparationPlan).filter_by(owner_id=owner).order_by(PreparationPlan.id.desc())]
 
 

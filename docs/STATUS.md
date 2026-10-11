@@ -4,14 +4,14 @@ Updated: October 11, 2026.
 Milestones 00-05 and a synthetic-data version of 06 are implemented. Next: **05b contract alignment and evidence staleness** (see ROADMAP).
 
 ## Implemented and verified
-Verified by running: backend `pytest` (55 passing), frontend `vitest` (4), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
+Verified by running: backend `pytest` (63 passing), frontend `vitest` (4), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
 
 | Area | Where | Notes |
 | --- | --- | --- |
 | Config / modes / auth | `backend/app/config.py`, `api/auth.py`, `main.py` | Demo: fixed identity, loopback only, SQLite only (startup refuses otherwise). Live: Supabase JWT (HS256 secret or JWKS), no demo fallback. Live tested with **mocked** tokens only |
 | Athlete, equipment, performance | `api/routes.py`, `models`, `schemas` | Single `PUT /athlete-profile`; equipment replaced as a list; records CRUD |
 | Competitions | `api/routes.py`, `data/fixtures.py` | 5 fictional competitions, manual entry, event edit bumps version + keeps `EventSpecRevision`; shared catalog read-only |
-| Assessments | `services/assessment.py` | Eligibility + event labels; stale on spec-version or status change |
+| Assessments | `services/assessment.py`, `services/evidence.py` | Eligibility + event labels; stale on spec-version, status, or athlete-evidence change |
 | Benchmarks | `services/benchmarks.py`, `HistoricalResult` | Synthetic cohorts only; exact-match cohort; percentile at n>=20 |
 | Planning | `services/planning.py`, `integrations/ai.py` | Mock planner + Claude adapter (fake-client tested only) + OpenAI-compatible adapter for Qwen/proxies (`AI_PROVIDER=openai_compatible`, mocked-transport tested only, never run against a real endpoint); hard validator; draft -> saved |
 | Training logs | `api/routes.py` | Log + optional new performance records linked via `training_log_id` |
@@ -21,7 +21,7 @@ Verified by running: backend `pytest` (55 passing), frontend `vitest` (4), `tsc 
 | Export / delete | `GET /export`, `DELETE /my-data` | Covered by tests |
 
 ## Known gaps versus these docs (highest priority first)
-1. **Evidence staleness is missing.** Module 05/01 and CONTRACTS require new/edited performance or equipment evidence (and profile changes) to mark assessments and plans stale. Currently only competition spec/status changes do; the athlete must remember to re-run the assessment.
+1. **Plan-input staleness is not done yet (step A3).** Reports now go stale when records, equipment or eligibility fields (body weight, age, category) change (A2, fingerprint on `Assessment.evidence_hash`; reports made before migration 0003 are 'unknown', not stale). Plans are stale when their report is, but not yet when availability, avoid list or pain flags change.
 2. **Contract drift** (see the table at the top of CONTRACTS): integer ids, no `/api/v1` prefix, `/equipment` + `/target`, "saved" instead of "active", plain FastAPI errors, no pagination, no revision fields on profile/equipment.
 3. No `repositories` layer: routes call ORM directly (`api/routes.py` is one large file). Split by feature when it next changes.
 4. Competition times are dates only (no time zone). No `PATCH /competitions/{id}`; only events are editable, and only private ones.

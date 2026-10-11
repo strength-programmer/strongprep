@@ -16,7 +16,7 @@ This document is the target. The demo build deviates as below; each row needs a 
 | `POST /preparation-plans/{id}/activate`, draft/active | `POST .../save`, draft/saved, no single-active rule |
 | Structured errors `{code, message, field errors}` | FastAPI `detail`: string, `{message, errors[]}` or pydantic list |
 | Pagination on unbounded lists | None |
-| Revision integers on profile/equipment/performance; assessments stale on evidence change | Revisions only on events; assessments stale only on spec version / status change |
+| Revision integers on profile/equipment/performance | No revision integers; instead each report stores an evidence fingerprint and goes stale when records, equipment or eligibility fields change (plan-input staleness: step A3) |
 | Competition local date + time zone | Date only |
 | UTC timestamps | `created_at` is UTC; `updated_at` and dates are naive |
 | `/jobs` endpoints later | Not present; generation is synchronous |
