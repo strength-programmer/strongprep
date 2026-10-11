@@ -4,7 +4,7 @@ Updated: October 11, 2026.
 Milestones 00-05 and a synthetic-data version of 06 are implemented. Finish-the-project plan: A1-A4, B1, B2, B3 done (frontend localhost bind; report and plan staleness; per-hand equipment limits; venue time zones; approximate distance + radius filter; per-field source evidence with confirm/conflict review). Next: **05b contract alignment and evidence staleness** (see ROADMAP).
 
 ## Implemented and verified
-Verified by running: backend `pytest` (115 passing), frontend `vitest` (5), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
+Verified by running: backend `pytest` (119 passing), frontend `vitest` (5), `tsc --noEmit`, `next build`, `alembic upgrade head` + `alembic check` (no drift), `python -m app.seed --demo-athlete` (idempotent), both servers started and every route returned 200, CORS preflight from `http://localhost:3000` OK.
 
 | Area | Where | Notes |
 | --- | --- | --- |

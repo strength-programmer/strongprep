@@ -19,16 +19,27 @@ def _is_loopback_host(host: str) -> bool:
     return host in ("localhost", "127.0.0.1", "::1")
 
 
-def validate_base_url(url: str, is_demo: bool) -> str:
-    """https only. Demo may use http to a loopback host (e.g. a local model server).
-    Live mode additionally rejects hosts that resolve to private/loopback/link-local addresses (SSRF guard)."""
+def is_insecure_url(url: str | None) -> bool:
+    """True for plain http to a non-local host (the API key would travel unencrypted)."""
+    if not url:
+        return False
+    p = urlparse(url)
+    return p.scheme == "http" and bool(p.hostname) and not _is_loopback_host(p.hostname.lower())
+
+
+def validate_base_url(url: str, is_demo: bool, allow_insecure_http: bool = False) -> str:
+    """https by default. Demo may use http to a loopback host (e.g. a local model server), or to any host when the
+    user explicitly opts in (allow_insecure_http), because the key is then sent unencrypted. Live mode never allows
+    http and additionally rejects hosts that resolve to private/loopback/link-local addresses (SSRF guard)."""
     url = url.strip().rstrip("/")
     p = urlparse(url)
     if p.scheme not in ("http", "https") or not p.hostname or p.username or p.password:
         raise SettingsError("Base URL must look like https://host/path (no credentials in the URL).")
     host = p.hostname.lower()
-    if p.scheme == "http" and not (is_demo and _is_loopback_host(host)):
-        raise SettingsError("Base URL must use https (http is only allowed for localhost in demo mode).")
+    if p.scheme == "http" and not (is_demo and (_is_loopback_host(host) or allow_insecure_http)):
+        raise SettingsError(
+            "This URL uses http, so your API key would be sent unencrypted. Use the provider's https URL if it has one."
+            + (" To use http anyway, tick 'Allow unencrypted http'." if is_demo else " Live mode requires https."))
     if not is_demo or not _is_loopback_host(host):
         try:
             infos = socket.getaddrinfo(host, p.port or (443 if p.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
@@ -79,6 +90,7 @@ def public_view(settings: Settings, row: AiSetting | None) -> dict:
         "source": source,
         "provider": row.provider if row else settings.ai_provider,
         "base_url": row.base_url if row else (settings.llm_base_url or None),
+        "insecure_http": is_insecure_url(row.base_url if row else settings.llm_base_url),
         "model": row.model if row else (settings.claude_model or settings.llm_model or None),
         "key_configured": bool(row.encrypted_key) if row else bool(settings.anthropic_api_key or settings.llm_api_key),
         "key_last4": row.key_last4 if row else None,

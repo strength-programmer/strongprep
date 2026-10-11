@@ -221,3 +221,4 @@ class AiSettingsIn(BaseModel):
     base_url: str | None = Field(None, max_length=300)
     model: str | None = Field(None, max_length=120)
     api_key: str | None = Field(None, max_length=600)  # optional on update: omit to keep the stored key
+    allow_insecure_http: bool = False  # demo only: explicit consent to send the key over plain http

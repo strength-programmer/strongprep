@@ -592,7 +592,7 @@ def put_ai_settings(body: AiSettingsIn, owner: str = Depends(current_owner), db:
             model = (body.model or "").strip()
             if not model:
                 raise ai_svc.SettingsError("A model name is required.")
-            base_url = ai_svc.validate_base_url(body.base_url or "", settings.is_demo) if body.provider == "openai_compatible" else None
+            base_url = ai_svc.validate_base_url(body.base_url or "", settings.is_demo, body.allow_insecure_http) if body.provider == "openai_compatible" else None
             if body.api_key:
                 key = ai_svc.clean_key(body.api_key)
                 enc, last4 = secrets.encrypt(settings, key), key[-4:]

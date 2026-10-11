@@ -190,3 +190,47 @@ def test_demo_generates_and_reuses_a_local_secret_file(tmp_path, monkeypatch):
         secrets.encrypt(Settings(app_mode="live", supabase_url="https://x"), "k")
     with pytest.raises(secrets.SecretsUnavailable):
         secrets.encrypt(Settings(app_mode="demo", app_secret_key="not-a-fernet-key"), "k")
+
+
+# ---------------------------------------------------------------- plain-http provider URLs (explicit opt-in, demo only)
+HTTP_BODY = {**BODY, "base_url": "http://llm.internal:4000/v1"}
+
+
+def test_http_to_a_remote_host_needs_explicit_consent_in_demo(demo):
+    client, Session, *_ = demo
+    r = client.put("/ai-settings", json=HTTP_BODY)
+    assert r.status_code == 422 and "unencrypted" in r.json()["detail"] and "Allow unencrypted http" in r.json()["detail"]
+    assert KEY not in r.text and raw_rows(Session) == []                      # nothing stored on refusal
+    ok = client.put("/ai-settings", json={**HTTP_BODY, "allow_insecure_http": True})
+    assert ok.status_code == 200 and ok.json()["insecure_http"] is True and KEY not in ok.text
+    assert client.get("/ai-settings").json()["insecure_http"] is True         # the UI can keep warning
+    # an https URL is never flagged, and the consent flag does nothing for it
+    safe = client.put("/ai-settings", json={**BODY, "allow_insecure_http": True})
+    assert safe.status_code == 200 and safe.json()["insecure_http"] is False
+
+
+def test_http_consent_is_ignored_in_live_mode(live):
+    client, Session, s = live
+    r = client.put("/ai-settings", json={**HTTP_BODY, "allow_insecure_http": True}, headers=auth("user-a"))
+    assert r.status_code == 422 and "Live mode requires https" in r.json()["detail"]
+    assert raw_rows(Session) == []
+
+
+def test_connection_test_and_plans_really_use_the_http_url_once_allowed(demo):
+    client, *_ = demo
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+
+    OpenAICompatiblePlanProvider._default_transport = httpx.MockTransport(handler)
+    client.put("/ai-settings", json={**HTTP_BODY, "allow_insecure_http": True})
+    assert client.post("/ai-settings/test").json()["ok"] is True
+    assert seen["url"] == "http://llm.internal:4000/v1/chat/completions"
+
+
+def test_is_insecure_url_helper():
+    assert svc.is_insecure_url("http://llm.example/v1") and svc.is_insecure_url("http://10.0.0.5:8000/v1")
+    assert not svc.is_insecure_url("https://llm.example/v1") and not svc.is_insecure_url("http://localhost:11434/v1")
+    assert not svc.is_insecure_url("http://127.0.0.1:8080") and not svc.is_insecure_url("") and not svc.is_insecure_url(None)
